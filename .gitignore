@@ -1,0 +1,20 @@
+# By file extension
+*.d
+*.obj
+*.pdb
+*.user
+*.aps
+*.idb
+
+# CMake Build Folders
+build/
+out/
+
+# In case someone uses VS
+.vs/
+
+# Output Binaries
+bin/
+
+# Custom folder to ignore.
+local/
