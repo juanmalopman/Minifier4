@@ -1,0 +1,79 @@
+{
+  "version": 4,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 2,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "msvc-x64",
+      "inherits": "windows-base",
+      "displayName": "MSVC x64",
+      "description": "Visual Studio Solution"
+    },
+    {
+      "name": "gcc",
+      "inherits": "ninja-base",
+      "displayName": "GCC (MinGW)",
+      "environment": {
+        "CC": "gcc"
+      },
+      "description": "GCC via Ninja"
+    },
+    {
+      "name": "clang",
+      "inherits": "ninja-base",
+      "displayName": "Clang (LLVM)",
+      "environment": {
+        "CC": "clang"
+      },
+      "description": "Clang via Ninja"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "msvc-x64",
+      "configuration": "Debug"
+    },
+    {
+      "name": "release",
+      "configurePreset": "msvc-x64",
+      "configuration": "Release"
+    },
+    {
+      "name": "gcc-debug",
+      "configurePreset": "gcc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "gcc-release",
+      "configurePreset": "gcc",
+      "configuration": "Release"
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "clang-release",
+      "configurePreset": "clang",
+      "configuration": "Release"
+    }
+  ]
+}
