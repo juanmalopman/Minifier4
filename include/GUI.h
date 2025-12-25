@@ -75,14 +75,22 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 // DEFINES
 //
 
+
+
 #define GRAY_BKG RGB(32, 32, 32)
 #define WHITE_TXT RGB(255, 255, 255)
-#define MAIN_WIN_MIN_WIDTH 700
-#define MAIN_WIN_MIN_HEIGHT 465
-#define RIGHT_MENU_WIDTH 150
 #define PathStrip_TXT L"Stripe PATH Seg."
-#define PathStrip_HEIGHT 29
-#define GoButton_COLOR 0x00000A68
+
+#define BASE_DPI 96
+
+// In logical pixels that will get scaled:
+#define W_MIN_mainWindow 700
+#define H_MIN_mainWindow 465
+#define W_rightMenu 150
+#define H_radio 20
+#define H_button 26
+#define GAP_normal 10
+#define GAP_small 4
 
 
 //
@@ -93,8 +101,17 @@ typedef struct StateGUI
 {
     HWND hwnds[countOfHwnd];
     bool failedToApplyDarkTheme;
+    UINT currentDPI;
 }StateGUI;
 
+typedef struct LayoutCtx{
+    UINT dpi;       // Current DPI.
+    HFONT hFont;    // Current font.
+    int x;          // Current X position.
+    int y;          // Current Y position.
+    int width;      // Standard width for controls in a given column.
+    int gapItem;    // Gap between two consecutive controls.
+} LayoutCtx;
 
 //
 // VARIABLES
@@ -107,4 +124,15 @@ typedef struct StateGUI
 
 int initializeGUI(_In_ HINSTANCE, _In_ StateGUI*);
 LRESULT sizeControls(StateGUI*, LPARAM);
-HFONT getDefaultUIFont();
+UINT getWindowDPI(HWND);
+HFONT getDpiAwareFont(UINT);
+
+//
+// STATIC INLINE FUNCTIONS
+//
+
+// Scale logical pixels to physical device pixels
+static inline int scale(int val, UINT dpi)
+{
+    return MulDiv(val, (int)dpi, BASE_DPI);
+}

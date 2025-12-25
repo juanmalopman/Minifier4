@@ -24,7 +24,7 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _
 
     // See if other instance is running.
 
-    // Avoid global variables.
+    // Avoid global variables for window handles.
     StateGUI stateGUI = { };
 
     // Create the main window and all the child controls.

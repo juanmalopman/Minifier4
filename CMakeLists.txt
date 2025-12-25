@@ -29,7 +29,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 
 # --- Compiler Options ---
 # dwmapi, uxtheme and comctl32 are for dark theme styling controls
-target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32)
+# shcore is for getting monitor DPI
+target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore)
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE

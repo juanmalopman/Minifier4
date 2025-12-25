@@ -1,6 +1,5 @@
-#include <windows.h>
 #include "resource.h"
 
-CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "app.manifest" // Required for dark mode.
+CREATEPROCESS_MANIFEST_RESOURCE_ID_customDefine RT_MANIFEST_customDefine "app.manifest" // Required for dark mode.
 
 APP_ICON ICON "MIN4.ico"

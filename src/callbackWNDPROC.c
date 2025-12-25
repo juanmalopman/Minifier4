@@ -94,6 +94,31 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         
         return sizeControls(pStateGUI, lParam);
     }
+    case WM_DPICHANGED:
+    {
+        // We're not dragging different windows between monitors but using one only window.
+        if (hWnd != pStateGUI->hwnds[mainWindow]) { break; }
+
+        // Update window DPI.
+        pStateGUI->currentDPI = LOWORD(wParam);
+
+        // Update the Font.
+        HFONT hNewFont = getDpiAwareFont(pStateGUI->currentDPI);
+        
+        // Apply font to main window and children
+        for (uint8_t i = mainWindow; i < countOfHwnd; i++)
+        {
+            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)hNewFont, TRUE);
+        }
+
+        // lParam contains a pointer to a RECT with the suggested new size/pos.
+        RECT* wndSz = (RECT*)lParam;
+
+        // Resize the window to the suggested rect, triggering WM_SIZE.
+        SetWindowPos(hWnd, NULL, wndSz->left, wndSz->top, wndSz->right - wndSz->left, wndSz->bottom - wndSz->top, SWP_NOZORDER | SWP_NOACTIVATE);
+
+        return 0;
+    }
     case WM_CTLCOLOREDIT: // --------------------------------------------------------------------------- WM_CTLCOLORBTN
     {
         // Change radio buttons and buttons background color and text color.
@@ -131,6 +156,11 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         NMCUSTOMDRAW* pNMCD = (LPNMCUSTOMDRAW)lParam;
         SetBkMode(pNMCD->hdc, GRAY_BKG); // Uniform background
         SetTextColor(pNMCD->hdc, WHITE_TXT); // White text
+        HFONT hFont = (HFONT)SendMessage(pStateGUI->hwnds[((NMHDR*)lParam)->idFrom], WM_GETFONT, 0, 0);
+        HGDIOBJ hOldFont = NULL;
+        if (hFont) {
+            hOldFont = SelectObject(pNMCD->hdc, hFont);
+        }
         SIZE sizeradioButton;
         HTHEME hTheme = OpenThemeData(NULL, L"Button"); 
         if (hTheme) // Get the default sizeradioButton for this theme.
@@ -150,6 +180,11 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         WCHAR wszText[MAX_PATH];
         GetWindowTextW(pStateGUI->hwnds[((NMHDR*)lParam)->idFrom], wszText, MAX_PATH);
         DrawTextW(pNMCD->hdc, wszText, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_EXPANDTABS | DT_END_ELLIPSIS);
+        // Cleanup
+        if (hOldFont)
+        {
+            SelectObject(pNMCD->hdc, hOldFont);
+        }
         return CDRF_SKIPDEFAULT;
     }
     case WM_ERASEBKGND: // ----------------------------------------------------------------------------- WM_ERASEBKGND
@@ -167,8 +202,8 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     {
         // Prevent users from resizing the window too small.
         LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
-        lpMMI->ptMinTrackSize.x = MAIN_WIN_MIN_WIDTH;
-        lpMMI->ptMinTrackSize.y = MAIN_WIN_MIN_HEIGHT;
+        lpMMI->ptMinTrackSize.x = scale(W_MIN_mainWindow, pStateGUI->currentDPI);
+        lpMMI->ptMinTrackSize.y = scale(H_MIN_mainWindow, pStateGUI->currentDPI);
         return 0; // Return 0 to tell Windows we handled this message
     }
     case WM_DESTROY: // -------------------------------------------------------------------------------- WM_DESTROY

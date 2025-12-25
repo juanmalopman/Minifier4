@@ -71,7 +71,7 @@ void printInteger(HWND hMain, int64_t number, UINT whichControl)
 }
 
 
-void setRichEditFormatting(HWND richEditControl)
+void setRichEditFormatting(HWND richEditControl, UINT dpi)
 {
 	CHARFORMATW monospaceCustomFont = { };
 	monospaceCustomFont.cbSize = sizeof(CHARFORMATW);
