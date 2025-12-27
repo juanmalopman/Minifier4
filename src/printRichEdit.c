@@ -6,6 +6,7 @@
 #include "framework.h"
 #include "printRichEdit.h"
 #include "callbackWNDPROC.h"
+#include "GUI.h"
 
 //
 // GLOBAL VARIABLES
@@ -83,12 +84,13 @@ void setRichEditFormatting(HWND richEditControl, UINT dpi)
     SendMessageW(richEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
 }
 
-//
-// Popup alert
-//
-
-void alert(LPCWSTR message)
+void alertPopup(LPCWSTR message)
 {
-	MessageBoxW(NULL, message, L"Message", MB_OK | MB_ICONINFORMATION);
+	MessageBoxW(NULL, message, mainWindowName, MB_OK | MB_ICONINFORMATION);
+}
+
+void errorPopup(LPCWSTR message)
+{
+    MessageBoxW(NULL, message, mainWindowName, MB_OK | MB_ICONERROR);
 }
 

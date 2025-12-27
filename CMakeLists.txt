@@ -31,6 +31,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 # dwmapi, uxtheme and comctl32 are for dark theme styling controls
 # shcore is for getting monitor DPI
 target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore)
+add_compile_definitions(UNICODE _UNICODE)
 
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE
@@ -50,8 +51,9 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         -pedantic
         $<$<CONFIG:Release>:-O3>
         # Attempt C23 support
-        -std=c2x 
+        -std=c2x
     )
+    target_link_options(${PROJECT_NAME} PRIVATE -municode) 
 endif()
 
 # --- Output Settings ---

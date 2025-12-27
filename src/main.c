@@ -16,9 +16,10 @@
 // FUNCTIONS
 //
 
-int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ [[maybe_unused]] HINSTANCE hPrevInstance, _In_ [[maybe_unused]] LPSTR lpCmdLine, _In_ [[maybe_unused]] int nCmdShow)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ [[maybe_unused]] HINSTANCE hPrevInstance, _In_ [[maybe_unused]] PWSTR pCmdLine, _In_ [[maybe_unused]] int nCmdShow)
 {
-    // See if other instance is running.
+    // If other instance is running, forward arguments and exit. // TODO: Handle forwarding when target is mid-processing.
+    if (!checkForReadilyRunningInstance(pCmdLine)) return 0;
 
     // Avoid global variables for window handles.
     StateAPP stateAPP = { };

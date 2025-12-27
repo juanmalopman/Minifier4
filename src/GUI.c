@@ -19,6 +19,32 @@
 // FUNCTIONS
 //
 
+bool checkForReadilyRunningInstance(PWSTR pCmdLine)
+{
+    // This instance hasn't got a window yet. If FindWindowExW returns a HWND there's another instance running.
+    HWND readilyRunningInstance = FindWindowExW(NULL, NULL, mainWindowClass, mainWindowName);
+    if (!readilyRunningInstance) return 1;
+    
+    // Send WM_COPYDATA with this instance's arguments in look for a "TRUE" as response.
+    COPYDATASTRUCT payload = { 0 };    
+    payload.cbData = wcslen(pCmdLine)*2; // Data length.
+    payload.lpData = pCmdLine; // Data pointer.
+
+    // Try to send WM_COPYDATA.
+    for (uint8_t i = 0; i < 50 ; i++)
+    {
+        if (SendMessageW(readilyRunningInstance, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&payload)) return 0; // Forwarded.
+
+        // Wait between attempts.
+        Sleep(5);
+    }
+
+    errorPopup(L"ERROR: Couldn't forward arguments to a detected readily running instance of " mainWindowName ".");
+
+    // Avoid spamming new instances, close this one.
+    return 0;
+}
+
 void getDarkModeFunctions(StateAPP* pStateAPP, HMODULE* hUxtheme)
 {
     // The method and ordinals are stable since Windows 10 (1809) and are used by major open-source projects like Notepad++.
@@ -47,7 +73,7 @@ bool registerMainWindowClass(HINSTANCE hInstance, WNDCLASSEXW* pWc)
     pWc->hIcon = pWc->hIconSm = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(APP_ICON)); // App icon from resources.rc and resource.h
 
     // Register the window class
-    if (!RegisterClassExW(pWc)) { MessageBoxW(NULL, L"Window Registration Failed!", L"Error", MB_OK | MB_ICONERROR); return 0; } 
+    if (!RegisterClassExW(pWc)) { errorPopup(L"Window Registration Failed!"); return 0; } 
 
     return 1;
 }
@@ -77,7 +103,7 @@ bool createMainWindow(HINSTANCE hInstance, StateAPP* pStateAPP)
     if (!centerHorizontally) { centerHorizontally = centerVertically = CW_USEDEFAULT; } // Fallback.
     if (!(pStateAPP->hwnds[mainWindow] = CreateWindowW(
         mainWindowClass,
-        L"Minifier 4",
+        mainWindowName,
         WS_OVERLAPPEDWINDOW,
         centerHorizontally,
         centerVertically,
@@ -85,7 +111,7 @@ bool createMainWindow(HINSTANCE hInstance, StateAPP* pStateAPP)
         scale(H_MIN_mainWindow, pStateAPP->currentDPI),
         NULL, NULL, hInstance,
         pStateAPP // The wndProc will get access to pStateAPP without making the struct or the hwnds global variables. 
-    ))) { MessageBoxW(NULL, L"Main window creation failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+    ))) { errorPopup(L"Main window creation failed!"); return 0; }
 
     // Make title bar dark.
     BOOL useDarkMode = TRUE;
@@ -99,7 +125,7 @@ bool createRichEditControls(HINSTANCE hInstance, StateAPP* pStateAPP)
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     if (!LoadLibraryExW(L"msftedit.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32))
     { 
-        MessageBoxW(NULL, L"Rich edit control library failed to load!", L"Error", MB_OK | MB_ICONERROR);
+        errorPopup(L"Rich edit control library failed to load!");
         return 0;
     }
     DWORD richEditStyle = WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_VISIBLE;
@@ -107,7 +133,7 @@ bool createRichEditControls(HINSTANCE hInstance, StateAPP* pStateAPP)
     {
         if (i == richEditInput) { richEditStyle &= ~ES_READONLY; } else { richEditStyle |= ES_READONLY; }
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"RICHEDIT50W", NULL, richEditStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], NULL, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Rich edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Rich edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateAPP->hwnds[i], EM_SETBKGNDCOLOR, 0, (LPARAM)RGB(23, 23, 23));
         setRichEditFormatting(pStateAPP->hwnds[i], pStateAPP->currentDPI);
     }
@@ -133,7 +159,7 @@ bool createStaticControls(HINSTANCE hInstance, StateAPP* pStateAPP)
             staticStyle |= SS_BLACKFRAME; // The other half are frames with lines on the perimeter.
         }
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"STATIC", staticText[i - staticStart], staticStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Static control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Static control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
 
@@ -161,7 +187,7 @@ bool createRadioButtonControls(HINSTANCE hInstance, StateAPP* pStateAPP)
             radioButtonStyle &= ~WS_GROUP;
         }
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", radioButtonText[i - radioButtonStart], radioButtonStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Radio button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Radio button control CreateWindowW failed!"); return 0; }
         if (i == radioButtonHTML || i == radioButtonMangle || i == radioButtonOutFileStrip)
         {
             SendMessageW( pStateAPP->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the radiobutton selected.
@@ -181,7 +207,7 @@ bool createButtonControls(HINSTANCE hInstance, StateAPP* pStateAPP)
     for (uint8_t i = buttonStart; i < buttonEnd; i++)
     {
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", buttonText[i - buttonStart], WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Button control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
 
@@ -198,7 +224,7 @@ bool createCheckboxControls(HINSTANCE hInstance, StateAPP* pStateAPP)
     for (uint8_t i = checkboxStart; i < checkboxEnd; i++)
     {
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", checkboxText[i - checkboxStart], checkboxStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Checkbox control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Checkbox control CreateWindowW failed!"); return 0; }
         SendMessageW( pStateAPP->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the cheackbox selected.
         SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
@@ -217,7 +243,7 @@ bool createEditControls(HINSTANCE hInstance, StateAPP* pStateAPP)
     {
         DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER;
         if (!(pStateAPP->hwnds[i] = CreateWindowW(L"EDIT", L"", editControlStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { MessageBoxW(NULL, L"Edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        { errorPopup(L"Edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
         Edit_SetCueBannerText(pStateAPP->hwnds[i], L"Stip Path Segment");
     }

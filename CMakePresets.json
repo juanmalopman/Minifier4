@@ -32,6 +32,9 @@
       "environment": {
         "CC": "gcc"
       },
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-m64"
+      },
       "description": "GCC via Ninja"
     },
     {

@@ -75,6 +75,7 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 // DEFINES
 //
 
+#define mainWindowName L"Minifier 4"
 #define mainWindowClass L"mainWindowClass"
 
 #define GRAY_BKG RGB(32, 32, 32)
@@ -130,6 +131,7 @@ typedef struct LayoutCtx
 // FUNCTIONS
 //
 
+bool checkForReadilyRunningInstance(PWSTR);
 int initializeGUI(_In_ HINSTANCE, _In_ StateAPP*);
 LRESULT sizeControls(StateAPP*, LPARAM);
 UINT getWindowDPI(HWND);
