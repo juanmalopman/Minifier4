@@ -20,16 +20,22 @@
 // FUNCTIONS
 //
 
-bool checkForReadilyRunningInstance(PWSTR pCmdLine)
+bool checkForReadilyRunningInstance()
 {
     // This instance hasn't got a window yet. If FindWindowExW returns a HWND there's another instance running.
     HWND readilyRunningInstance = FindWindowExW(NULL, NULL, mainWindowClass, mainWindowName);
     if (!readilyRunningInstance) return 1;
+
+
     
     // Send WM_COPYDATA with this instance's arguments in look for a "TRUE" as response.
-    COPYDATASTRUCT payload = { 0 };    
-    payload.cbData = wcslen(pCmdLine) * 2; // Data length in bytes.
-    payload.lpData = pCmdLine; // Data pointer.
+    COPYDATASTRUCT payload = { 0 };
+
+    LPWSTR cmdLine = GetCommandLineW(); 
+
+    // + 1 because of the null terminator. sizeof(wchar_t) because cbData expects byte count.
+    payload.cbData = (wcslen(cmdLine) + 1) * sizeof(wchar_t);
+    payload.lpData = cmdLine;
 
     // Try to send WM_COPYDATA.
     for (uint8_t i = 0; i < 50 ; i++)
@@ -170,7 +176,7 @@ bool createStaticControls(HINSTANCE hInstance, StateGUI* pStateGUI)
     return 1;
 }
 
-bool createRadioButtonControls(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pStateGUI)
+bool createRadioButtonControls(HINSTANCE hInstance, StateGUI* pStateGUI)
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
@@ -191,10 +197,6 @@ bool createRadioButtonControls(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* p
         { errorPopup(L"Radio button control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);        
     }
-
-    SendMessageW( pStateGUI->hwnds[pMinOpt->inputType], BM_SETCHECK, BST_CHECKED, 0); // Makes the correct radiobutton selected acording to settings.
-    SendMessageW( pStateGUI->hwnds[pMinOpt->outFile], BM_SETCHECK, BST_CHECKED, 0); // Makes the correct radiobutton selected acording to settings.
-
     return 1;
 }
 
@@ -214,7 +216,7 @@ bool createButtonControls(HINSTANCE hInstance, StateGUI* pStateGUI)
     return 1;
 }
 
-bool createCheckboxControls(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pStateGUI)
+bool createCheckboxControls(HINSTANCE hInstance, StateGUI* pStateGUI)
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
@@ -227,10 +229,6 @@ bool createCheckboxControls(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pSta
         { errorPopup(L"Checkbox control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
     }
-
-    if (pMinOpt->defaultToPrevFile) SendMessageW( pStateGUI->hwnds[checkboxDefaultToPrev], BM_SETCHECK, BST_CHECKED, 0); // Makes the cheackbox selected.
-    if (pMinOpt->mangle) SendMessageW( pStateGUI->hwnds[checkboxMangle], BM_SETCHECK, BST_CHECKED, 0); // Makes the cheackbox selected.
-
     return 1;
 }
 
@@ -266,7 +264,7 @@ void applyDarkModeIfAvailable(StateGUI* pStateGUI)
     }
 }
 
-int initializeGUI(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pStateGUI)
+int initializeGUI(HINSTANCE hInstance, StateGUI* pStateGUI)
 {
 	// Enable dark theme/dark mode.
     HMODULE hUxtheme = nullptr;
@@ -289,13 +287,13 @@ int initializeGUI(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pStateGUI)
     if (!createStaticControls(hInstance, pStateGUI)) return 0;
 
     // Create radio buttons.
-    if (!createRadioButtonControls(hInstance, pMinOpt, pStateGUI)) return 0;
+    if (!createRadioButtonControls(hInstance, pStateGUI)) return 0;
 
     // Create buttons.
     if (!createButtonControls(hInstance, pStateGUI)) return 0;
 
     // Create checkboxes.
-    if (!createCheckboxControls(hInstance, pMinOpt, pStateGUI)) return 0;
+    if (!createCheckboxControls(hInstance, pStateGUI)) return 0;
 
     // Create edit controls.
     if (!createEditControls(hInstance, pStateGUI)) return 0;
@@ -305,6 +303,9 @@ int initializeGUI(HINSTANCE hInstance, MinOpt* pMinOpt, StateGUI* pStateGUI)
 
     // Hide focus rectangle if clicking elements and not navigating with the keyboard.
     SendMessageW(pStateGUI->hwnds[mainWindow], WM_CHANGEUISTATE, MAKEWPARAM(UIS_SET, UISF_HIDEFOCUS), 0);
+
+    // Apply changes dictated by the minifier settings.
+    updateMenuSelections(pStateGUI);
 
     // Show main window. All childs have the WS_VISIBLE flag already.
     ShowWindow(pStateGUI->hwnds[mainWindow], SW_SHOW);
@@ -656,4 +657,22 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
     InvalidateRect(pStateGUI->hwnds[mainWindow], nullptr, TRUE);
 
     return 0;
+}
+
+// Make the correct checkboxes/radio buttons selected and fill in edit controls.
+void updateMenuSelections(StateGUI* pStateGUI)
+{
+    // Update radio buttons selection status. Deselections are automatic.
+    PostMessageW(pStateGUI->hwnds[pStateGUI->pMiniCfg->inputType], BM_CLICK, 0, 0);
+    PostMessageW(pStateGUI->hwnds[pStateGUI->pMiniCfg->outFile], BM_CLICK, 0, 0);
+
+    // Update checkboxes selection status.
+    WPARAM checkState;
+    checkState = pStateGUI->pMiniCfg->defaultToPrevFile ? BST_CHECKED : BST_UNCHECKED;
+    PostMessageW( pStateGUI->hwnds[checkboxDefaultToPrev], BM_SETCHECK, checkState, 0);
+    checkState = pStateGUI->pMiniCfg->mangle ? BST_CHECKED : BST_UNCHECKED;
+    PostMessageW( pStateGUI->hwnds[checkboxMangle], BM_SETCHECK, checkState, 0);
+
+    // Update edit controls text.
+    SetWindowTextW(pStateGUI->hwnds[editPathStrip], pStateGUI->pMiniCfg->stripSeg);
 }

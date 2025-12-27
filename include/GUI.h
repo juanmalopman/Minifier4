@@ -4,7 +4,7 @@
 // FORWARD DECLARATIONS
 //
 
-typedef struct MinOpt MinOpt;
+typedef struct MiniCfg MiniCfg;
 
 //
 // ENUMS
@@ -91,7 +91,7 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 
 // In logical pixels that will get scaled:
 #define W_MIN_mainWindow 700
-#define H_MIN_mainWindow 450
+#define H_MIN_mainWindow 475
 #define W_rightMenu 150
 #define H_radio 20
 #define H_button 26
@@ -115,6 +115,7 @@ typedef struct StateGUI
     HWND hwnds[countOfHwnd];
     PFN_AllowDarkMode darkModeApplied;
     UINT currentDPI;
+    MiniCfg* pMiniCfg;
 } StateGUI;
 
 typedef struct LayoutCtx
@@ -136,11 +137,12 @@ typedef struct LayoutCtx
 // FUNCTIONS
 //
 
-bool checkForReadilyRunningInstance(PWSTR);
-int initializeGUI(HINSTANCE, MinOpt*, StateGUI*);
+bool checkForReadilyRunningInstance();
+int initializeGUI(HINSTANCE, StateGUI*);
 LRESULT sizeControls(StateGUI*, LPARAM);
 UINT getWindowDPI(HWND);
 HFONT getDpiAwareFont(UINT);
+void updateMenuSelections(StateGUI*);
 
 //
 // STATIC INLINE FUNCTIONS

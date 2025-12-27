@@ -7,6 +7,7 @@
 #include "callbackWNDPROC.h"
 #include "GUI.h"
 #include "printRichEdit.h"
+#include "minificationSetup.h"
 
 //
 // GLOBAL VARIABLES
@@ -90,7 +91,8 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     case WM_COPYDATA: // ------------------------------------------------------------------------------- WM_COPYDATA
     {
         // Arguments forwarded by a recently executed instance before terminating.
-        alertPopup((LPCWSTR)(((COPYDATASTRUCT*)lParam)->lpData));
+        COPYDATASTRUCT* pCds = (COPYDATASTRUCT*)lParam;
+        parseArgumentsCLI(pStateGUI, (PWSTR)pCds->lpData);
         return TRUE;
     }
     case WM_SIZE:

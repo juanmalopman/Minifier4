@@ -16,7 +16,7 @@ typedef struct StateGUI StateGUI;
 // STRUCTS
 //
 
-typedef struct MinOpt
+typedef struct MiniCfg
 {
 	bool alreadyPresentGUI;
 	bool flagNoGUI;
@@ -28,7 +28,7 @@ typedef struct MinOpt
     uint8_t outFile;
     wchar_t stripSeg[MAX_PATH];
     wchar_t outPath[MAX_PATH];
-} MinOpt;
+} MiniCfg;
 
 //
 // GLOBAL VARIABLES
@@ -39,5 +39,5 @@ typedef struct MinOpt
 // FUNCTIONS
 //
 
-void loadMinificationSettings(MinOpt*);
-bool parseArgumentsCLI(MinOpt*, StateGUI*);
+void loadMinificationSettings(MiniCfg*, StateGUI*);
+bool parseArgumentsCLI(StateGUI*, PWSTR);

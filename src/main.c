@@ -17,22 +17,22 @@
 // FUNCTIONS
 //
 
-int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ [[maybe_unused]] HINSTANCE hPrevInstance, _In_ [[maybe_unused]] PWSTR pCmdLine, _In_ [[maybe_unused]] int nCmdShow)
+int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
     // If other instance is running, forward arguments and exit. // TODO: Handle forwarding when target is mid-processing.
-    if (!checkForReadilyRunningInstance(pCmdLine)) return 0;
+    if (!checkForReadilyRunningInstance()) return 0;
 
     // Load default minification settings.
-    MinOpt minOpt = { };
+    MiniCfg miniCfg = { };
     StateGUI stateGUI = { };
-    loadMinificationSettings(&minOpt);
+    loadMinificationSettings(&miniCfg, &stateGUI);
 
     // If the -noGUI flag is set, do the converion and exit here.
-    if (!parseArgumentsCLI(&minOpt, &stateGUI)) return 0;
+    if (!parseArgumentsCLI(&stateGUI, nullptr)) return 0;
     
 
     // Create the main window and all the child controls.
-    if (!initializeGUI(hInstance, &minOpt, &stateGUI)){ return 1; }
+    if (!initializeGUI(hInstance, &stateGUI)){ return 1; }
 
     
     // Message loop.

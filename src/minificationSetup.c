@@ -17,31 +17,43 @@
 // FUNCTIONS
 //
 
-void loadMinificationSettings(MinOpt* pMinOpt)
+void loadMinificationSettings(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
 {
 	// TODO: Load last used settings.
-	pMinOpt->alreadyPresentGUI = false;
-    pMinOpt->flagNoGUI = false;
-    pMinOpt->prevPath[0] = 0;
-    pMinOpt->inPath[0] = 0;
-    pMinOpt->inputType = radioButtonHTML;
-    pMinOpt->defaultToPrevFile = true;
-    pMinOpt->mangle = true;
-    pMinOpt->outFile = radioButtonOutFileStrip;
-    wcscpy_s(pMinOpt->stripSeg, MAX_PATH, L"dev");
-    pMinOpt->outPath[0] = 0;
+	pMiniCfg->alreadyPresentGUI = false;
+    pMiniCfg->flagNoGUI = false;
+    pMiniCfg->prevPath[0] = 0;
+    pMiniCfg->inPath[0] = 0;
+    pMiniCfg->inputType = radioButtonHTML;
+    pMiniCfg->defaultToPrevFile = true;
+    pMiniCfg->mangle = true;
+    pMiniCfg->outFile = radioButtonOutFileStrip;
+    pMiniCfg->stripSeg[0] = 0;
+    pMiniCfg->outPath[0] = 0;
+
+
+    pStateGUI->pMiniCfg = pMiniCfg;
 }
 
-bool parseArgumentsCLI(MinOpt* pMinOpt, StateGUI* pStateGUI)
+bool parseArgumentsCLI(StateGUI* pStateGUI, PWSTR forwardedArgs)
 {
 	// Split argument string into the individual constituent arguments. 
     int argc = 0;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    PWSTR* argv;
+    if (forwardedArgs != nullptr)
+    {
+        argv = CommandLineToArgvW(forwardedArgs, &argc);
+    }
+    else
+    {
+        argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    }
 
     // If called with no arguments, do render a GUI (return 1). Don't trigger a conversion.
-    if (argv <= 1) return 1;
+    if (argc <= 1) return 1;
 
     bool goNow = 0;
+    auto pMiniCfg = pStateGUI->pMiniCfg;
 
     // The executable PATH is always the first argument of GetCommandLineW() return value. Skip it with i = 1. 
     for (int i = 1; i < argc; ++i)
@@ -56,57 +68,57 @@ bool parseArgumentsCLI(MinOpt* pMinOpt, StateGUI* pStateGUI)
         }
         else if (_wcsicmp(argv[i], L"--noGUI") == 0)
         {
-            pMinOpt->flagNoGUI = true;
+            pMiniCfg->flagNoGUI = true;
         }
         else if (_wcsicmp(argv[i], L"--input") == 0 && i + 1 < argc)
         {
             // Get the path to the file to minify.
-            wcscpy_s(pMinOpt->inPath, MAX_PATH, argv[++i]);
+            wcscpy_s(pMiniCfg->inPath, MAX_PATH, argv[++i]);
         }
         else if (_wcsicmp(argv[i], L"--dfltToPrev") == 0)
         {
-            pMinOpt->defaultToPrevFile = true;
+            pMiniCfg->defaultToPrevFile = true;
         }
         else if (_wcsicmp(argv[i], L"--noDfltToPrev") == 0)
         {
-            pMinOpt->defaultToPrevFile = false;
+            pMiniCfg->defaultToPrevFile = false;
         }
         else if (_wcsicmp(argv[i], L"--mangle") == 0)
         {
-            pMinOpt->mangle = true;
+            pMiniCfg->mangle = true;
         }
         else if (_wcsicmp(argv[i], L"--noMangle") == 0)
         {
-            pMinOpt->mangle = false;
+            pMiniCfg->mangle = false;
         }
         else if (_wcsicmp(argv[i], L"--HTML") == 0)
         {
-            pMinOpt->inputType = radioButtonHTML;
+            pMiniCfg->inputType = radioButtonHTML;
         }
         else if (_wcsicmp(argv[i], L"--JS") == 0)
         {
-            pMinOpt->inputType = radioButtonJS;
+            pMiniCfg->inputType = radioButtonJS;
         }
         else if (_wcsicmp(argv[i], L"--CSS") == 0)
         {
-            pMinOpt->inputType = radioButtonCSS;
+            pMiniCfg->inputType = radioButtonCSS;
         }
         else if (_wcsicmp(argv[i], L"--noOutFile") == 0)
         {
         	// No output file to create.
-            pMinOpt->outFile = radioButtonNoOutFile;
+            pMiniCfg->outFile = radioButtonNoOutFile;
         }
         else if (_wcsicmp(argv[i], L"--outStrip") == 0 && i + 1 < argc)
         {
         	// PATH segment to stip specified.
-            pMinOpt->outFile = radioButtonOutFileStrip;
-            wcscpy_s(pMinOpt->stripSeg, MAX_PATH, argv[++i]);
+            pMiniCfg->outFile = radioButtonOutFileStrip;
+            wcscpy_s(pMiniCfg->stripSeg, MAX_PATH, argv[++i]);
         }
         else if (_wcsicmp(argv[i], L"--outPath") == 0 && i + 1 < argc)
         {
             // Complete output PATH specified.
-            pMinOpt->outFile = radioButtonOutFilePath;
-            wcscpy_s(pMinOpt->outPath, MAX_PATH, argv[++i]);
+            pMiniCfg->outFile = radioButtonOutFilePath;
+            wcscpy_s(pMiniCfg->outPath, MAX_PATH, argv[++i]);
         }
         else
         {
@@ -120,16 +132,11 @@ bool parseArgumentsCLI(MinOpt* pMinOpt, StateGUI* pStateGUI)
     LocalFree(argv);
 
     // See if there's a GUI already.
-    if (pStateGUI->hwnds[countOfHwnd - 1])
-    {
-    	pMinOpt->alreadyPresentGUI = true;
-    	// Set the GUI settings accordingly
-    }
+    if (pStateGUI->hwnds[countOfHwnd - 1]) pMiniCfg->alreadyPresentGUI = true;
 
-
-    if (pMinOpt->flagNoGUI && !(pMinOpt->alreadyPresentGUI))
+    if (pMiniCfg->flagNoGUI && !(pMiniCfg->alreadyPresentGUI))
     {
-	    // Trigger a conversion right away.
+	    // Trigger a minification right away.
         // minify(html)
 
         // Don't render a GUI, just terminate the process.
@@ -137,14 +144,17 @@ bool parseArgumentsCLI(MinOpt* pMinOpt, StateGUI* pStateGUI)
         return 0;
     }
 
+    // Apply changes dictated by the just updated minifier options.
+    updateMenuSelections(pStateGUI);
+
     if (goNow)
     {
-    	/* code */
+    	// Trigger a delayed minification. Post to wndProc and wait for windows to be ready somehow? Checking hwnds[countOfHwnds - 1] maybe.
+        // PostMessageW(MSGCUSTOM_MINIFY);
     }
     
     
-	// Send start command to the loop and wait for windows to be ready somehow? Checking hwnds[countOfHwnds - 1] maybe.
-	// PostMessageW(MSGCUSTOM_MINIFY);
+
     
     return 1;
 }
