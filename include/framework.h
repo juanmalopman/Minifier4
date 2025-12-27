@@ -22,3 +22,4 @@
 #include <vssym32.h> // Required for CBS_UNCHECKEDNORMAL (Redrawing radio buttons).
 #include <commctrl.h> // Allows UI controls to be subclassed and some messages handled to change their graphics. (Library added to CMakeLists.txt).
 #include <shellscalingapi.h> // Allows getting monitor DPI to scale the GUI. ("shcore.lib" library added to CMakeLists.txt).
+#include <shellapi.h> // Required for CommandLineToArgvW

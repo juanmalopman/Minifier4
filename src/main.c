@@ -6,6 +6,7 @@
 #include "framework.h"
 #include "main.h"
 #include "GUI.h"
+#include "minificationSetup.h"
 
 //
 // GLOBAL VARIABLES
@@ -21,11 +22,17 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, _In_opt_ [[maybe_unused]] HINSTANC
     // If other instance is running, forward arguments and exit. // TODO: Handle forwarding when target is mid-processing.
     if (!checkForReadilyRunningInstance(pCmdLine)) return 0;
 
-    // Avoid global variables for window handles.
-    StateAPP stateAPP = { };
+    // Load default minification settings.
+    MinOpt minOpt = { };
+    StateGUI stateGUI = { };
+    loadMinificationSettings(&minOpt);
+
+    // If the -noGUI flag is set, do the converion and exit here.
+    if (!parseArgumentsCLI(&minOpt, &stateGUI)) return 0;
+    
 
     // Create the main window and all the child controls.
-    if (!initializeGUI(hInstance, &stateAPP)){ return 1; }
+    if (!initializeGUI(hInstance, &minOpt, &stateGUI)){ return 1; }
 
     
     // Message loop.

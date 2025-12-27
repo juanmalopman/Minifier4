@@ -1,6 +1,12 @@
 #pragma once
 
 //
+// FORWARD DECLARATIONS
+//
+
+typedef struct MinOpt MinOpt;
+
+//
 // ENUMS
 //
 
@@ -38,8 +44,6 @@ typedef enum enumOfHwnds // To keep track of all window handles.
         radioButtonHTML         = richEditEnd, // Fix index
         radioButtonCSS,
         radioButtonJS,
-        radioButtonMangle,
-        radioButtonKeepNames,
         radioButtonNoOutFile,
         radioButtonOutFileStrip,
         radioButtonOutFilePath,
@@ -53,6 +57,7 @@ typedef enum enumOfHwnds // To keep track of all window handles.
 
     checkboxStart               = buttonEnd, // Fix index
         checkboxDefaultToPrev   = buttonEnd, // Fix index
+        checkboxMangle,
     checkboxEnd,
 
     editStart                   = checkboxEnd, // Fix index
@@ -86,7 +91,7 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 
 // In logical pixels that will get scaled:
 #define W_MIN_mainWindow 700
-#define H_MIN_mainWindow 475
+#define H_MIN_mainWindow 450
 #define W_rightMenu 150
 #define H_radio 20
 #define H_button 26
@@ -105,12 +110,12 @@ typedef BOOL (WINAPI *PFN_AllowDarkMode)(HWND, BOOL);
 // STRUCTS
 //
 
-typedef struct StateAPP
+typedef struct StateGUI
 {
     HWND hwnds[countOfHwnd];
     PFN_AllowDarkMode darkModeApplied;
     UINT currentDPI;
-} StateAPP;
+} StateGUI;
 
 typedef struct LayoutCtx
 {
@@ -132,8 +137,8 @@ typedef struct LayoutCtx
 //
 
 bool checkForReadilyRunningInstance(PWSTR);
-int initializeGUI(_In_ HINSTANCE, _In_ StateAPP*);
-LRESULT sizeControls(StateAPP*, LPARAM);
+int initializeGUI(HINSTANCE, MinOpt*, StateGUI*);
+LRESULT sizeControls(StateGUI*, LPARAM);
 UINT getWindowDPI(HWND);
 HFONT getDpiAwareFont(UINT);
 

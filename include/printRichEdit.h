@@ -25,6 +25,6 @@
 void print(HWND, const wchar_t*, UINT);
 void printInteger(HWND, int64_t, UINT);
 void printLineNumbering();
-void setRichEditFormatting(HWND,UINT);
+void setRichEditFormatting(HWND);
 void alertPopup(LPCWSTR);
 void errorPopup(LPCWSTR);
