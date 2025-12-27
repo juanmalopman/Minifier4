@@ -16,19 +16,15 @@
 // FUNCTIONS
 //
 
-int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nCmdShow)
+int WINAPI WinMain(_In_ HINSTANCE hInstance, _In_opt_ [[maybe_unused]] HINSTANCE hPrevInstance, _In_ [[maybe_unused]] LPSTR lpCmdLine, _In_ [[maybe_unused]] int nCmdShow)
 {
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
-    UNREFERENCED_PARAMETER(nCmdShow);
-
     // See if other instance is running.
 
     // Avoid global variables for window handles.
-    StateGUI stateGUI = { };
+    StateAPP stateAPP = { };
 
     // Create the main window and all the child controls.
-    if (!initializeGUI(hInstance, &stateGUI)){ return 1; }
+    if (!initializeGUI(hInstance, &stateAPP)){ return 1; }
 
     
     // Message loop.

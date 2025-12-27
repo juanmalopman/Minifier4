@@ -75,7 +75,7 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 // DEFINES
 //
 
-
+#define mainWindowClass L"mainWindowClass"
 
 #define GRAY_BKG RGB(32, 32, 32)
 #define WHITE_TXT RGB(255, 255, 255)
@@ -85,26 +85,34 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 
 // In logical pixels that will get scaled:
 #define W_MIN_mainWindow 700
-#define H_MIN_mainWindow 465
+#define H_MIN_mainWindow 475
 #define W_rightMenu 150
 #define H_radio 20
 #define H_button 26
 #define GAP_normal 10
 #define GAP_small 4
 
+//
+// TYPEDEFS
+//
+
+// uxtheme.dll dark mode functions.
+typedef BOOL (WINAPI *PFN_SetPreferredAppMode)(PreferredAppMode);
+typedef BOOL (WINAPI *PFN_AllowDarkMode)(HWND, BOOL);
 
 //
 // STRUCTS
 //
 
-typedef struct StateGUI
+typedef struct StateAPP
 {
     HWND hwnds[countOfHwnd];
-    bool failedToApplyDarkTheme;
+    PFN_AllowDarkMode darkModeApplied;
     UINT currentDPI;
-}StateGUI;
+} StateAPP;
 
-typedef struct LayoutCtx{
+typedef struct LayoutCtx
+{
     UINT dpi;       // Current DPI.
     HFONT hFont;    // Current font.
     int x;          // Current X position.
@@ -122,8 +130,8 @@ typedef struct LayoutCtx{
 // FUNCTIONS
 //
 
-int initializeGUI(_In_ HINSTANCE, _In_ StateGUI*);
-LRESULT sizeControls(StateGUI*, LPARAM);
+int initializeGUI(_In_ HINSTANCE, _In_ StateAPP*);
+LRESULT sizeControls(StateAPP*, LPARAM);
 UINT getWindowDPI(HWND);
 HFONT getDpiAwareFont(UINT);
 

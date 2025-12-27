@@ -19,218 +19,276 @@
 // FUNCTIONS
 //
 
-int initializeGUI(_In_ HINSTANCE hInstance, _In_ StateGUI* pStateGUI)
+void getDarkModeFunctions(StateAPP* pStateAPP, HMODULE* hUxtheme)
 {
-	// Enable dark theme/dark mode.
-    typedef BOOL (WINAPI *PFN_SetPreferredAppMode)(PreferredAppMode);
-    typedef BOOL (WINAPI *PFN_AllowDarkMode)(HWND, BOOL);
+    // The method and ordinals are stable since Windows 10 (1809) and are used by major open-source projects like Notepad++.
+    // The GUI falls back to light colors seamlessly
+    *hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     PFN_SetPreferredAppMode setPreferredAppMode = nullptr; // "Undocumented" function pointer declaration.
-    PFN_AllowDarkMode allowDarkMode = nullptr; // "Undocumented" function pointer declaration.
-    HMODULE hUxtheme = nullptr;
-
+    pStateAPP->darkModeApplied = nullptr; // "Undocumented" function pointer declaration.
+    if (*hUxtheme)
     {
-        pStateGUI->failedToApplyDarkTheme = 1; // Cleared if all windows get properly themed.
-
-        // The method and ordinals are stable since Windows 10 (1809) and are used by major open-source projects like Notepad++.
-        // The GUI falls back to light colors seamlessly
-        hUxtheme = LoadLibraryExW(L"uxtheme.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
-
-        if (hUxtheme)
-        {
-            FARPROC fp;
-            fp = GetProcAddress(hUxtheme, MAKEINTRESOURCEA(135)); // "Undocumented" function pointer definition.
-            memcpy(&setPreferredAppMode, &fp, sizeof(fp));
-            fp = GetProcAddress(hUxtheme, MAKEINTRESOURCEA(133)); // "Undocumented" function pointer definition.
-            memcpy(&allowDarkMode, &fp, sizeof(fp));
-        }
-        if (setPreferredAppMode) { setPreferredAppMode(PreferredAppMode_AllowDark); }
+        FARPROC fp;
+        fp = GetProcAddress(*hUxtheme, MAKEINTRESOURCEA(135)); // "Undocumented" function pointer definition.
+        memcpy(&setPreferredAppMode, &fp, sizeof(fp));
+        fp = GetProcAddress(*hUxtheme, MAKEINTRESOURCEA(133)); // "Undocumented" function pointer definition.
+        memcpy(&(pStateAPP->darkModeApplied), &fp, sizeof(fp));
     }
+    if (setPreferredAppMode) { setPreferredAppMode(PreferredAppMode_AllowDark); }
+}
 
-
-    // Create window class
-    WNDCLASSEXW wc = { };
-    wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.lpfnWndProc = callbackWNDPROC;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = L"SimpleWindow";
-    wc.hbrBackground = NULL; // This is handled in WM_ERASEBKGND to do without CreateSolidBrush(); and DeleteObject();.
-    wc.hIcon = wc.hIconSm = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(APP_ICON)); // App icon from resources.rc and resource.h
+bool registerMainWindowClass(HINSTANCE hInstance, WNDCLASSEXW* pWc)
+{
+    pWc->cbSize = sizeof(WNDCLASSEXW);
+    pWc->lpfnWndProc = callbackWNDPROC;
+    pWc->hInstance = hInstance;
+    pWc->lpszClassName = mainWindowClass;
+    pWc->hbrBackground = NULL; // This is handled in WM_ERASEBKGND to do without CreateSolidBrush(); and DeleteObject();.
+    pWc->hIcon = pWc->hIconSm = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(APP_ICON)); // App icon from resources.rc and resource.h
 
     // Register the window class
-    if (!RegisterClassExW(&wc)) { MessageBoxW(NULL, L"Window Registration Failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+    if (!RegisterClassExW(pWc)) { MessageBoxW(NULL, L"Window Registration Failed!", L"Error", MB_OK | MB_ICONERROR); return 0; } 
 
-    // Determine the initial DPI of the primary monitor. 96 is the ultimate fallback.
-    pStateGUI->currentDPI = 96;
+    return 1;
+}
+
+void getMonitorDPI(StateAPP* pStateAPP)
+{
+    pStateAPP->currentDPI = 96; // 96 is the ultimate fallback.
+
+    HMONITOR hMonitor = MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY);
+    UINT dpiX, dpiY;
+    if (hMonitor && SUCCEEDED(GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)))
     {
-        HMONITOR hMonitor = MonitorFromWindow(NULL, MONITOR_DEFAULTTOPRIMARY);
-        UINT dpiX, dpiY;
-        if (hMonitor && SUCCEEDED(GetDpiForMonitor(hMonitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY)))
-        {
-            pStateGUI->currentDPI = dpiX;
-        }
-        else if ( (dpiX = GetDpiForSystem()) )
-        {
-            // Fallback for older Windows 10 versions or failure
-            // GetDpiForSystem is available in Win 10 1607+
-            pStateGUI->currentDPI = dpiX; 
-        }
+        pStateAPP->currentDPI = dpiX;
     }
+    else if ( (dpiX = GetDpiForSystem()) )
+    {
+        // Fallback for older Windows 10 versions or failure
+        // GetDpiForSystem is available in Win 10 1607+
+        pStateAPP->currentDPI = dpiX; 
+    }    
+}
 
-    // Create parent window
+bool createMainWindow(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
     int centerHorizontally = (GetSystemMetrics(SM_CXSCREEN) - W_MIN_mainWindow) / 2;
     int centerVertically = (GetSystemMetrics(SM_CYSCREEN) - H_MIN_mainWindow) / 2;
     if (!centerHorizontally) { centerHorizontally = centerVertically = CW_USEDEFAULT; } // Fallback.
-    if (!(pStateGUI->hwnds[mainWindow] = CreateWindowW(
-        L"SimpleWindow",
+    if (!(pStateAPP->hwnds[mainWindow] = CreateWindowW(
+        mainWindowClass,
         L"Minifier 4",
         WS_OVERLAPPEDWINDOW,
         centerHorizontally,
         centerVertically,
-        scale(W_MIN_mainWindow, pStateGUI->currentDPI),
-        scale(H_MIN_mainWindow, pStateGUI->currentDPI),
+        scale(W_MIN_mainWindow, pStateAPP->currentDPI),
+        scale(H_MIN_mainWindow, pStateAPP->currentDPI),
         NULL, NULL, hInstance,
-        pStateGUI // The wndProc will get access to pStateGUI without making the struct or the hwnds global variables. 
+        pStateAPP // The wndProc will get access to pStateAPP without making the struct or the hwnds global variables. 
     ))) { MessageBoxW(NULL, L"Main window creation failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
 
     // Make title bar dark.
     BOOL useDarkMode = TRUE;
-    DwmSetWindowAttribute(pStateGUI->hwnds[mainWindow], 20, &useDarkMode, sizeof(useDarkMode));
-   
-    // Create rich edit controls. Sizing logic for the rich edit controls and buttons is inside the WM_SIZE message handling.
-    if (!LoadLibraryW(L"Msftedit.dll")) { MessageBoxW(NULL, L"Rich edit control library failed to load!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+    DwmSetWindowAttribute(pStateAPP->hwnds[mainWindow], 20, &useDarkMode, sizeof(useDarkMode));
+
+    return 1;
+}
+
+bool createRichEditControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    if (!LoadLibraryExW(L"msftedit.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32))
+    { 
+        MessageBoxW(NULL, L"Rich edit control library failed to load!", L"Error", MB_OK | MB_ICONERROR);
+        return 0;
+    }
+    DWORD richEditStyle = WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_VISIBLE;
+    for (uint8_t i = richEditStart; i < richEditEnd; i++)
     {
-        DWORD richEditStyle = WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_VISIBLE;
-        for (uint8_t i = richEditStart; i < richEditEnd; i++)
-        {
-            if (i == richEditInput) { richEditStyle &= ~ES_READONLY; } else { richEditStyle |= ES_READONLY; }
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"RICHEDIT50W", NULL, richEditStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], NULL, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Rich edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            SetWindowTheme(pStateGUI->hwnds[i], L"DarkMode_Explorer", NULL);
-            SendMessageW(pStateGUI->hwnds[i], EM_SETBKGNDCOLOR, 0, (LPARAM)RGB(23, 23, 23));
-            setRichEditFormatting(pStateGUI->hwnds[i], pStateGUI->currentDPI);
-        }
+        if (i == richEditInput) { richEditStyle &= ~ES_READONLY; } else { richEditStyle |= ES_READONLY; }
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"RICHEDIT50W", NULL, richEditStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], NULL, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Rich edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        SendMessageW(pStateAPP->hwnds[i], EM_SETBKGNDCOLOR, 0, (LPARAM)RGB(23, 23, 23));
+        setRichEditFormatting(pStateAPP->hwnds[i], pStateAPP->currentDPI);
     }
 
-    // Create static controls. Sets HMENU (the id of each) to the corresponding enum value. Sizing logic is inside the WM_SIZE message handling.
+    return 1;
+}
+
+bool createStaticControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    // Sets HMENU (the id of each) to the corresponding enum value.
+    static const wchar_t* staticText[] = { L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"" };
+    static_assert( _countof(staticText) == (staticEnd - staticStart), "Count mismatch: Update the staticText array!");
+    DWORD staticStyle =  WS_CHILD | WS_VISIBLE | SS_CENTER;
+    for (uint8_t i = staticStart; i < staticEnd; i++)
     {
-        static const wchar_t* staticText[] = { L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"" };
-        static_assert( _countof(staticText) == (staticEnd - staticStart), "Count mismatch: Update the staticText array!");
-        DWORD staticStyle =  WS_CHILD | WS_VISIBLE | SS_CENTER;
-        for (uint8_t i = staticStart; i < staticEnd; i++)
+        if ((i - staticStart) % 2)
         {
-            if ((i - staticStart) % 2)
-            {
-                staticStyle &= ~SS_BLACKFRAME; // Half the static controls are labels with background.
-            }
-            else
-            {
-                staticStyle |= SS_BLACKFRAME; // The other half are frames with lines on the perimeter.
-            }
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"STATIC", staticText[i - staticStart], staticStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Static control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
+            staticStyle &= ~SS_BLACKFRAME; // Half the static controls are labels with background.
         }
+        else
+        {
+            staticStyle |= SS_BLACKFRAME; // The other half are frames with lines on the perimeter.
+        }
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"STATIC", staticText[i - staticStart], staticStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Static control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
+
     // Swap Z order, staticBorderForEditControl needs to be on top of staticBackgroundForEditControl.
-    SetWindowPos(pStateGUI->hwnds[staticBackgroundForEditControl], pStateGUI->hwnds[staticBorderForEditControl - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetWindowPos(pStateAPP->hwnds[staticBackgroundForEditControl], pStateAPP->hwnds[staticBorderForEditControl - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
-    // Create radio buttons. Sets HMENU (the id of each) to the corresponding enum value. Sizing logic is inside the WM_SIZE message handling.
+    return 1;
+}
+
+bool createRadioButtonControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    // Sets HMENU (the id of each) to the corresponding enum value.
+    static const wchar_t* radioButtonText[] = { L"HTML", L"CSS", L"JS", L"Mangle", L"Keep Names", L"No out. file", L"On stripped path", L"On custom path"};
+    static_assert( _countof(radioButtonText) == (radioButtonEnd - radioButtonStart), "Count mismatch: Update the radioButtonText array!" );
+    DWORD radioButtonStyle =  WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON;
+    for (uint8_t i = radioButtonStart; i < radioButtonEnd; i++)
     {
-        static const wchar_t* radioButtonText[] = { L"HTML", L"CSS", L"JS", L"Mangle", L"Keep Names", L"No out. file", L"On stripped path", L"On custom path"};
-        static_assert( _countof(radioButtonText) == (radioButtonEnd - radioButtonStart), "Count mismatch: Update the radioButtonText array!" );
-        DWORD radioButtonStyle =  WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON;
-        for (uint8_t i = radioButtonStart; i < radioButtonEnd; i++)
+        if (i == radioButtonHTML || i == radioButtonMangle || i == radioButtonNoOutFile)
         {
-            if (i == radioButtonHTML || i == radioButtonMangle || i == radioButtonNoOutFile)
-            {
-                radioButtonStyle |= WS_GROUP; // Groups radio buttons for selection to be mutually exclusive.
-            }
-            else
-            {
-                radioButtonStyle &= ~WS_GROUP;
-            }
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", radioButtonText[i - radioButtonStart], radioButtonStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Radio button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            if (i == radioButtonHTML || i == radioButtonMangle || i == radioButtonOutFileStrip)
-            {
-                SendMessage( pStateGUI->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the radiobutton selected.
-            }
-            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);        
+            radioButtonStyle |= WS_GROUP; // Groups radio buttons for selection to be mutually exclusive.
         }
+        else
+        {
+            radioButtonStyle &= ~WS_GROUP;
+        }
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", radioButtonText[i - radioButtonStart], radioButtonStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Radio button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        if (i == radioButtonHTML || i == radioButtonMangle || i == radioButtonOutFileStrip)
+        {
+            SendMessageW( pStateAPP->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the radiobutton selected.
+        }
+        SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);        
     }
 
-    // Create buttons. Sets HMENU (the id of each) to the corresponding enum value. Sizing logic is inside the WM_SIZE message handling.
+    return 1;
+}
+
+bool createButtonControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    // Sets HMENU (the id of each) to the corresponding enum value.
+    static const wchar_t* buttonText[] = { L"Files...", L"Out. Dir.", L"GO !"};
+    static_assert( _countof(buttonText) == (buttonEnd - buttonStart), "Count mismatch: Update the buttonText array!");
+    for (uint8_t i = buttonStart; i < buttonEnd; i++)
     {
-        static const wchar_t* buttonText[] = { L"Files...", L"Out. Dir.", L"GO !"};
-        static_assert( _countof(buttonText) == (buttonEnd - buttonStart), "Count mismatch: Update the buttonText array!");
-        for (uint8_t i = buttonStart; i < buttonEnd; i++)
-        {
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", buttonText[i - buttonStart], WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
-        }
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", buttonText[i - buttonStart], WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Button control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
 
-    // Create checkboxes. Sets HMENU (the id of each) to the corresponding enum value. Sizing logic is inside the WM_SIZE message handling.
+    return 1;
+}
+
+bool createCheckboxControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    // Sets HMENU (the id of each) to the corresponding enum value.
+    static const wchar_t* checkboxText[] = { L"Default to prev. HTML"};
+    static_assert( _countof(checkboxText) == (checkboxEnd - checkboxStart), "Count mismatch: Update the checkboxText array!" );
+    DWORD checkboxStyle =  WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX;
+    for (uint8_t i = checkboxStart; i < checkboxEnd; i++)
     {
-        static const wchar_t* checkboxText[] = { L"Default to prev. HTML"};
-        static_assert( _countof(checkboxText) == (checkboxEnd - checkboxStart), "Count mismatch: Update the checkboxText array!" );
-        DWORD checkboxStyle =  WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX;
-        for (uint8_t i = checkboxStart; i < checkboxEnd; i++)
-        {
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", checkboxText[i - checkboxStart], checkboxStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Checkbox control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            SendMessage( pStateGUI->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the cheackbox selected.
-            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
-        }
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"BUTTON", checkboxText[i - checkboxStart], checkboxStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Checkbox control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        SendMessageW( pStateAPP->hwnds[i], BM_SETCHECK, BST_CHECKED, 0); // Makes the cheackbox selected.
+        SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
     }
 
-    // Create edit controls. Sets HMENU (the id of each) to the corresponding enum value. Sizing logic is inside the WM_SIZE message handling.
-    if (!LoadLibraryW(L"comctl32.dll")) { MessageBoxW(NULL, L"LoadLibraryW comctl32.dll failed! Can't standard edit controls!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+    return 1;
+}
+
+bool createEditControls(HINSTANCE hInstance, StateAPP* pStateAPP)
+{
+    // Sizing logic for child controls is inside the WM_SIZE message handling.
+    // Sets HMENU (the id of each) to the corresponding enum value.
+    // "You cannot set a cue banner on a multiline edit control or on a rich edit control."
+    static const wchar_t* editControlCueBanner[] = { PathStrip_TXT };
+    static_assert( _countof(editControlCueBanner) == (editEnd- editStart), "Count mismatch: Update the editControlCueBanner array!");
+    for (uint8_t i = editStart; i < editEnd; i++)
     {
-        // "You cannot set a cue banner on a multiline edit control or on a rich edit control."
-        static const wchar_t* editControlCueBanner[] = { PathStrip_TXT };
-        static_assert( _countof(editControlCueBanner) == (editEnd- editStart), "Count mismatch: Update the editControlCueBanner array!");
-        for (uint8_t i = editStart; i < editEnd; i++)
-        {
-            DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER;
-            if (!(pStateGUI->hwnds[i] = CreateWindowW(L"EDIT", L"", editControlStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-            { MessageBoxW(NULL, L"Edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
-            SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
-            Edit_SetCueBannerText(pStateGUI->hwnds[i], L"Stip Path Segment");
-        }
+        DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER;
+        if (!(pStateAPP->hwnds[i] = CreateWindowW(L"EDIT", L"", editControlStyle, 0, 0, 0, 0, pStateAPP->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
+        { MessageBoxW(NULL, L"Edit control CreateWindowW failed!", L"Error", MB_OK | MB_ICONERROR); return 0; }
+        SendMessageW(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateAPP->currentDPI), TRUE);
+        Edit_SetCueBannerText(pStateAPP->hwnds[i], L"Stip Path Segment");
     }
 
-    // Apply dark mode to everything. Not necessary in all environments.
-    if (allowDarkMode)
+    return 1;
+}
+
+void applyDarkModeIfAvailable(StateAPP* pStateAPP)
+{
+    if (pStateAPP->darkModeApplied != nullptr)
     {
+        for (uint8_t i = mainWindow; i < countOfHwnd; i++)
         {
-            for (uint8_t i = mainWindow; i < countOfHwnd; i++)
-            {
-                SetWindowTheme(pStateGUI->hwnds[i], L"DarkMode_Explorer", NULL);
-                allowDarkMode(pStateGUI->hwnds[i], true);
-                SendMessageW(pStateGUI->hwnds[i], WM_THEMECHANGED, 0, 0);
-            }
+            SetWindowTheme(pStateAPP->hwnds[i], L"DarkMode_Explorer", NULL);
+            pStateAPP->darkModeApplied(pStateAPP->hwnds[i], true);
+            SendMessageW(pStateAPP->hwnds[i], WM_THEMECHANGED, 0, 0);
         }
-        pStateGUI->failedToApplyDarkTheme = 0;
     }
+}
+
+int initializeGUI(_In_ HINSTANCE hInstance, _In_ StateAPP* pStateAPP)
+{
+	// Enable dark theme/dark mode.
+    HMODULE hUxtheme = nullptr;
+    getDarkModeFunctions(pStateAPP, &hUxtheme);
+
+    // Create window class.
+    WNDCLASSEXW wc = { };
+    if (!registerMainWindowClass(hInstance, &wc)) return 0;
+   
+    // Determine the initial DPI of the primary monitor.
+    getMonitorDPI(pStateAPP);
+
+    // Create main window.
+    if (!createMainWindow(hInstance, pStateAPP)) return 0;
+   
+    // Create rich edit controls.
+    if (!createRichEditControls(hInstance, pStateAPP)) return 0;
+
+    // Create static controls.
+    if (!createStaticControls(hInstance, pStateAPP)) return 0;
+
+    // Create radio buttons.
+    if (!createRadioButtonControls(hInstance, pStateAPP)) return 0;
+
+    // Create buttons.
+    if (!createButtonControls(hInstance, pStateAPP)) return 0;
+
+    // Create checkboxes.
+    if (!createCheckboxControls(hInstance, pStateAPP)) return 0;
+
+    // Create edit controls.
+    if (!createEditControls(hInstance, pStateAPP)) return 0;
+
+    // Apply dark mode to everything.
+    applyDarkModeIfAvailable(pStateAPP);
 
     // Hide focus rectangle if clicking elements and not navigating with the keyboard.
-    SendMessage(pStateGUI->hwnds[mainWindow], WM_CHANGEUISTATE, MAKEWPARAM(UIS_SET, UISF_HIDEFOCUS), 0);
-
+    SendMessageW(pStateAPP->hwnds[mainWindow], WM_CHANGEUISTATE, MAKEWPARAM(UIS_SET, UISF_HIDEFOCUS), 0);
 
     // Show main window. All childs have the WS_VISIBLE flag already.
-    ShowWindow(pStateGUI->hwnds[mainWindow], SW_SHOW);
+    ShowWindow(pStateAPP->hwnds[mainWindow], SW_SHOW);
 
     // Done using the dark mode dll.
     if (hUxtheme) { FreeLibrary(hUxtheme); }
 
-    print(pStateGUI->hwnds[mainWindow], L"Minifier 4 - Juan Manuel López Manzano 2025", TO_CONSOLE);
+    print(pStateAPP->hwnds[mainWindow], L"Minifier 4 - Juan Manuel López Manzano 2025", TO_CONSOLE);
 
-    print(pStateGUI->hwnds[mainWindow], L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
+    print(pStateAPP->hwnds[mainWindow], L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
             "<meta name='viewport' content='width=device-width, initial-scale=1'>\r\n     <title>"
             "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>", TO_INPUT);
-
 
     return 1;
 }
@@ -354,11 +412,11 @@ void layoutSpace(LayoutCtx* ctx, int spacePhysical)
 }
 
 // Autosize and center editPathStrip control.
-void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
+void layoutEditStrip(StateAPP* pStateAPP, LayoutCtx* ctx)
 {
     // All controls except the rich edits share the same font. Get the height.
     SIZE sz = { };
-    sz = calculateControlTextSize(pStateGUI->hwnds[radioButtonStart]);
+    sz = calculateControlTextSize(pStateAPP->hwnds[radioButtonStart]);
 
     int hText = sz.cy;
 
@@ -366,11 +424,11 @@ void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
 
     // editPathStrip should be centered in staticBackgroundForEditControl. Get it's position and size relative to the screen.
     RECT rc = { };
-    GetWindowRect(pStateGUI->hwnds[staticBackgroundForEditControl], &rc);
+    GetWindowRect(pStateAPP->hwnds[staticBackgroundForEditControl], &rc);
 
     // Make position and size relative to the mainWindow.
     const UINT UPDATE_LEFT_TOP_RIGHT_BOTTOM = 4; // Ask MapWindowPoints to update the 4 rc points.
-    MapWindowPoints(NULL, pStateGUI->hwnds[mainWindow], (LPPOINT)&rc, UPDATE_LEFT_TOP_RIGHT_BOTTOM); 
+    MapWindowPoints(NULL, pStateAPP->hwnds[mainWindow], (LPPOINT)&rc, UPDATE_LEFT_TOP_RIGHT_BOTTOM); 
 
     if (!rc.left) return;
 
@@ -385,7 +443,7 @@ void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
     int yPosEdit = yStatic + (hStatic - hEdit) / 2;
     
     // Make editPathStrip as high as the text and position it in the center of staticBackgroundForEditControl.
-    MoveWindow(pStateGUI->hwnds[editPathStrip], xPosEdit, yPosEdit, wEdit, hEdit, TRUE);
+    MoveWindow(pStateAPP->hwnds[editPathStrip], xPosEdit, yPosEdit, wEdit, hEdit, TRUE);
 }
 
 // Stores and returns the latest font. Deletes old fonts when dpi changes.
@@ -424,14 +482,14 @@ HFONT getDpiAwareFont(UINT dpi)
 }
 
 // Called by WM_SIZE to do the whole child controls layout. 
-LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
+LRESULT sizeControls(StateAPP* pStateAPP, LPARAM lParam)
 {
     // Whole main window in physical (scaled) pixels.
     int wClient = LOWORD(lParam);
     int hClient = HIWORD(lParam);
 
     // currentDPI is updated inside WM_DPICHANGED.
-    UINT dpi = pStateGUI->currentDPI;
+    UINT dpi = pStateAPP->currentDPI;
 
     // Calculate physical dimensions.
     int gap = scale(GAP_normal, dpi);
@@ -467,9 +525,9 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
 
         for (uint8_t i = richEditStart; i < richEditEnd; i++)
         {
-            layoutPlace(&ctx, pStateGUI->hwnds[i], hRich);
+            layoutPlace(&ctx, pStateAPP->hwnds[i], hRich);
 
-            SendMessage(pStateGUI->hwnds[i], EM_SETRECT, 0, (LPARAM)&rcPad); // Update the padding.
+            SendMessage(pStateAPP->hwnds[i], EM_SETRECT, 0, (LPARAM)&rcPad); // Update the padding.
         }
     }
 
@@ -477,23 +535,23 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
     {
         ctx = layoutInit(dpi, xCtrl, topMargin, wCtrl);
 
-        layoutLabel(&ctx, pStateGUI->hwnds[staticInputSpacerText]);
+        layoutLabel(&ctx, pStateAPP->hwnds[staticInputSpacerText]);
         layoutSpace(&ctx, smallGap);
 
         for (uint8_t i = radioButtonHTML; i <= radioButtonJS; i++)
         {
-            layoutPlace(&ctx, pStateGUI->hwnds[i], hRadio);
+            layoutPlace(&ctx, pStateAPP->hwnds[i], hRadio);
         }
 
-        layoutPlace(&ctx, pStateGUI->hwnds[buttonFiles], hButton);
-        layoutPlace(&ctx, pStateGUI->hwnds[checkboxDefaultToPrev], hRadio);
+        layoutPlace(&ctx, pStateAPP->hwnds[buttonFiles], hButton);
+        layoutPlace(&ctx, pStateAPP->hwnds[checkboxDefaultToPrev], hRadio);
 
         // Draw group encasing frame.
         int topFrame = topMargin + gap;
         int hFrame = ctx.y + smallGap - topFrame;
         ctx = layoutInit(dpi, xMenu, topFrame, wMenu);
 
-        layoutPlace(&ctx, pStateGUI->hwnds[staticInputSpacerLine], hFrame);
+        layoutPlace(&ctx, pStateAPP->hwnds[staticInputSpacerLine], hFrame);
     }
 
     // Right menu - Section "output".
@@ -502,11 +560,12 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
 
         ctx = layoutInit(dpi, xCtrl, topOfOutput, wCtrl);
 
-        layoutLabel(&ctx, pStateGUI->hwnds[staticOutputSpacerText]);
+        layoutLabel(&ctx, pStateAPP->hwnds[staticOutputSpacerText]);
+        layoutSpace(&ctx, smallGap);
         
         for (uint8_t i = radioButtonMangle; i <= radioButtonKeepNames; i++)
         {
-            layoutPlace(&ctx, pStateGUI->hwnds[i], hRadio);
+            layoutPlace(&ctx, pStateAPP->hwnds[i], hRadio);
         }
 
         // Draw group encasing frame.
@@ -514,7 +573,7 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
         int hFrame = ctx.y + smallGap - topFrame;
         ctx = layoutInit(dpi, xMenu, topFrame, wMenu);
 
-        layoutPlace(&ctx, pStateGUI->hwnds[staticOutputSpacerLine], hFrame);
+        layoutPlace(&ctx, pStateAPP->hwnds[staticOutputSpacerLine], hFrame);
     }
 
     // Right menu - Section "out. files".
@@ -523,11 +582,12 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
 
         ctx = layoutInit(dpi, xCtrl, topOfOutFiles, wCtrl);
 
-        layoutLabel(&ctx, pStateGUI->hwnds[staticOutFileSpacerText]);
+        layoutLabel(&ctx, pStateAPP->hwnds[staticOutFileSpacerText]);
+        layoutSpace(&ctx, smallGap);
 
         for (uint8_t i = radioButtonNoOutFile; i <= radioButtonOutFilePath; i++)
         {
-            layoutPlace(&ctx, pStateGUI->hwnds[i], hRadio);
+            layoutPlace(&ctx, pStateAPP->hwnds[i], hRadio);
 
             // editPathStrip frame.
             if (i == radioButtonOutFileStrip)
@@ -535,9 +595,9 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
                 int yFrameStripCtl = ctx.y;
 
                 // Background and border.
-                layoutPlace(&ctx, pStateGUI->hwnds[staticBackgroundForEditControl], hButton);
+                layoutPlace(&ctx, pStateAPP->hwnds[staticBackgroundForEditControl], hButton);
                 ctx.y = yFrameStripCtl; // Restore cursor position to same place.
-                layoutPlace(&ctx, pStateGUI->hwnds[staticBorderForEditControl], hButton);
+                layoutPlace(&ctx, pStateAPP->hwnds[staticBorderForEditControl], hButton);
 
                 // Don't draw nested edit control yet.
             }
@@ -545,7 +605,7 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
             // buttonOutDir.
             if (i == radioButtonOutFilePath)
             {
-                layoutPlace(&ctx, pStateGUI->hwnds[buttonOutDir], hButton);
+                layoutPlace(&ctx, pStateAPP->hwnds[buttonOutDir], hButton);
             }
         }
 
@@ -554,21 +614,21 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
         int hFrame = ctx.y + smallGap - topFrame;
         ctx = layoutInit(dpi, xMenu, topFrame, wMenu);
 
-        layoutPlace(&ctx, pStateGUI->hwnds[staticOutFileSpacerLine], hFrame);
+        layoutPlace(&ctx, pStateAPP->hwnds[staticOutFileSpacerLine], hFrame);
     }
 
     // Right menu - buttonGo.
     {
         layoutSpace(&ctx, smallGap);
 
-        layoutPlace(&ctx, pStateGUI->hwnds[buttonGo], hButton);
+        layoutPlace(&ctx, pStateAPP->hwnds[buttonGo], hButton);
     }
 
     // Autosize and position editPathStrip. 
-    layoutEditStrip(pStateGUI, &ctx);
+    layoutEditStrip(pStateAPP, &ctx);
 
     // Repaint
-    InvalidateRect(pStateGUI->hwnds[mainWindow], nullptr, TRUE);
+    InvalidateRect(pStateAPP->hwnds[mainWindow], nullptr, TRUE);
 
     return 0;
 }

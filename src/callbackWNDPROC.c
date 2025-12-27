@@ -28,40 +28,39 @@ void appendToRichEditControl(HWND hWnd, LPARAM lParam)
 
 LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-    StateGUI* pStateGUI = nullptr;
+    StateAPP* pStateAPP = nullptr;
 
     if (uMsg == WM_NCCREATE)
     {
         // Extract the pointer passed in CreateWindow.
         CREATESTRUCT* pCreate = (CREATESTRUCT*)lParam;
-        pStateGUI = (StateGUI*)pCreate->lpCreateParams;
+        pStateAPP = (StateAPP*)pCreate->lpCreateParams;
         
-        // Store the pointer to a StateGUI struct in the window instance.
-        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pStateGUI);
+        // Store the pointer to a StateAPP struct in the window instance.
+        SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)pStateAPP);
         
         // Ensure the struct knows its own main handle.
-        if (pStateGUI) pStateGUI->hwnds[mainWindow] = hWnd;
+        if (pStateAPP) pStateAPP->hwnds[mainWindow] = hWnd;
     }
     else
     {
-        // Retrieve pStateGUI pointer for all other messages. 
-        pStateGUI = (StateGUI*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+        // Retrieve pStateAPP pointer for all other messages. 
+        pStateAPP = (StateAPP*)GetWindowLongPtr(hWnd, GWLP_USERDATA);
     }
 
-    // Guard: If message comes before NCCREATE, or pStateGUI is nullptr, don't try pStateGUI->hwnds[something].
-    if (!pStateGUI) return DefWindowProcW(hWnd, uMsg, wParam, lParam);
-
+    // Guard: If message comes before NCCREATE, or pStateAPP is nullptr, don't try pStateAPP->hwnds[something].
+    if (!pStateAPP) return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 
     switch (uMsg)
     {
     case MSGCUSTOM_PRINTINPUT: // ---------------------------------------------------------------------- MSGCUSTOM_PRINTINPUT
     {
-        appendToRichEditControl(pStateGUI->hwnds[richEditInput], lParam);
+        appendToRichEditControl(pStateAPP->hwnds[richEditInput], lParam);
         return 0;
     }
     case MSGCUSTOM_PRINTOUTPUT: // --------------------------------------------------------------------- MSGCUSTOM_PRINTOUTPUT
     {
-        appendToRichEditControl(pStateGUI->hwnds[richEditOutput], lParam);
+        appendToRichEditControl(pStateAPP->hwnds[richEditOutput], lParam);
         return 0;
     }
     case MSGCUSTOM_PRINTCONSOLE: // -------------------------------------------------------------------- MSGCUSTOM_PRINTCONSOLE
@@ -85,30 +84,30 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         swprintf_s(tempNum, CONSOLE_PREFIX_LEN, L"%05d", lineNumberToPrint);
         wmemcpy_s(pMessage, CONSOLE_PREFIX_LEN, tempNum, CONSOLE_NUMBER_LEN);
 
-        appendToRichEditControl(pStateGUI->hwnds[richEditConsole], lParam);
+        appendToRichEditControl(pStateAPP->hwnds[richEditConsole], lParam);
         return 0;
     }
     case WM_SIZE:
     {
-        if (hWnd != pStateGUI->hwnds[mainWindow]) { break; }
+        if (hWnd != pStateAPP->hwnds[mainWindow]) { break; }
         
-        return sizeControls(pStateGUI, lParam);
+        return sizeControls(pStateAPP, lParam);
     }
     case WM_DPICHANGED:
     {
         // We're not dragging different windows between monitors but using one only window.
-        if (hWnd != pStateGUI->hwnds[mainWindow]) { break; }
+        if (hWnd != pStateAPP->hwnds[mainWindow]) { break; }
 
         // Update window DPI.
-        pStateGUI->currentDPI = LOWORD(wParam);
+        pStateAPP->currentDPI = LOWORD(wParam);
 
         // Update the Font.
-        HFONT hNewFont = getDpiAwareFont(pStateGUI->currentDPI);
+        HFONT hNewFont = getDpiAwareFont(pStateAPP->currentDPI);
         
         // Apply font to main window and children
         for (uint8_t i = mainWindow; i < countOfHwnd; i++)
         {
-            SendMessage(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)hNewFont, TRUE);
+            SendMessage(pStateAPP->hwnds[i], WM_SETFONT, (WPARAM)hNewFont, TRUE);
         }
 
         // lParam contains a pointer to a RECT with the suggested new size/pos.
@@ -122,7 +121,7 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     case WM_CTLCOLOREDIT: // --------------------------------------------------------------------------- WM_CTLCOLORBTN
     {
         // Change radio buttons and buttons background color and text color.
-        if (pStateGUI->failedToApplyDarkTheme) { break; }
+        if (pStateAPP->darkModeApplied == nullptr) { break; }
         SetTextColor((HDC)wParam, WHITE_TXT); // Text letters
         SetBkColor((HDC)wParam, RGB(0,0,0)); // Behind text letters
         SetDCBrushColor((HDC)wParam, RGB(0,0,0)); // Background other than behind text
@@ -132,13 +131,13 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     case WM_CTLCOLORSTATIC: // ------------------------------------------------------------------------- WM_CTLCOLORSTATIC
     {
         // Change radio buttons and buttons background color and text color.
-        if (pStateGUI->failedToApplyDarkTheme) { break; }
+        if (pStateAPP->darkModeApplied == nullptr) { break; }
 
         SetTextColor((HDC)wParam, WHITE_TXT); // Text letters
         SetBkColor((HDC)wParam, GRAY_BKG); // Behind text letters
         SetDCBrushColor((HDC)wParam, GRAY_BKG); // Background other than behind text
 
-        if ((HWND)lParam == pStateGUI->hwnds[staticBackgroundForEditControl])
+        if ((HWND)lParam == pStateAPP->hwnds[staticBackgroundForEditControl])
         {
             SetDCBrushColor((HDC)wParam, RGB(0,0,0)); // Background other than behind text
         }
@@ -146,51 +145,30 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     }
     case WM_NOTIFY: // --------------------------------------------------------------------------------- WM_NOTIFY
     {
-        // Changing radio buttons text color while keeping the dark theme is hard.
+        // Changing radio buttons text color while keeping the dark theme can't be done handling WM_CTLCOLORBTN.
         // We need to handle CDDS_PREPAINT, do the text painting, and return CDRF_SKIPDEFAULT.
+        // Some information online suggest CDRF_SKIPDEFAULT would skip drawing the radio button.
+        // This is either untrue or valid on old versions of windows. Tested on Win 11 25H2.
+        // If no text is manually drawn in CDDS_PREPAINT before returning CDRF_SKIPDEFAULT, the radio button is not drawn eiter.
+
         if (((NMHDR*)lParam)->code != NM_CUSTOMDRAW) { break; }
-        if (((NMHDR*)lParam)->idFrom < radioButtonStart || ((NMHDR*)lParam)->idFrom >= radioButtonEnd) { break; }
+        if (((NMHDR*)lParam)->idFrom < radioButtonStart || ((NMHDR*)lParam)->idFrom >= radioButtonEnd) { break; }        
         if (((NMCUSTOMDRAW*)lParam)->dwDrawStage != CDDS_PREPAINT) { break; }
-        if (pStateGUI->failedToApplyDarkTheme) { break; }
+        if (pStateAPP->darkModeApplied == nullptr) { break; }
 
         NMCUSTOMDRAW* pNMCD = (LPNMCUSTOMDRAW)lParam;
-        SetBkMode(pNMCD->hdc, GRAY_BKG); // Uniform background
         SetTextColor(pNMCD->hdc, WHITE_TXT); // White text
-        HFONT hFont = (HFONT)SendMessage(pStateGUI->hwnds[((NMHDR*)lParam)->idFrom], WM_GETFONT, 0, 0);
-        HGDIOBJ hOldFont = NULL;
-        if (hFont) {
-            hOldFont = SelectObject(pNMCD->hdc, hFont);
-        }
-        SIZE sizeradioButton;
-        HTHEME hTheme = OpenThemeData(NULL, L"Button"); 
-        if (hTheme) // Get the default sizeradioButton for this theme.
-        {
-            GetThemePartSize(hTheme, pNMCD->hdc, BP_CHECKBOX, CBS_UNCHECKEDNORMAL, NULL, TS_DRAW, &sizeradioButton);
-            CloseThemeData(hTheme);
-        }
-        else
-        {
-            sizeradioButton.cx = sizeradioButton.cy = 13; // Fallback if themes are disabled
-        }
-        SIZE sizeExtent;
-        GetTextExtentPoint32(pNMCD->hdc, TEXT("0"), 1, &sizeExtent);
-        int nShift = sizeExtent.cx / 2;
         RECT rc = pNMCD->rc;
-        OffsetRect(&rc, sizeradioButton.cx + nShift, 0);
+        rc.left += scale(GAP_normal * 2, pStateAPP->currentDPI);
         WCHAR wszText[MAX_PATH];
-        GetWindowTextW(pStateGUI->hwnds[((NMHDR*)lParam)->idFrom], wszText, MAX_PATH);
-        DrawTextW(pNMCD->hdc, wszText, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_EXPANDTABS | DT_END_ELLIPSIS);
-        // Cleanup
-        if (hOldFont)
-        {
-            SelectObject(pNMCD->hdc, hOldFont);
-        }
+        GetWindowTextW(pStateAPP->hwnds[((NMHDR*)lParam)->idFrom], wszText, MAX_PATH);
+        DrawTextW(pNMCD->hdc, wszText, -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         return CDRF_SKIPDEFAULT;
     }
     case WM_ERASEBKGND: // ----------------------------------------------------------------------------- WM_ERASEBKGND
     {
         // Make the application background the same color as the title bar.
-        if (pStateGUI->failedToApplyDarkTheme) { break; }
+        if (pStateAPP->darkModeApplied == nullptr) { break; }
         HDC hdc = (HDC)wParam;
         RECT rc;
         GetClientRect(hWnd, &rc);
@@ -202,12 +180,15 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     {
         // Prevent users from resizing the window too small.
         LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
-        lpMMI->ptMinTrackSize.x = scale(W_MIN_mainWindow, pStateGUI->currentDPI);
-        lpMMI->ptMinTrackSize.y = scale(H_MIN_mainWindow, pStateGUI->currentDPI);
+        lpMMI->ptMinTrackSize.x = scale(W_MIN_mainWindow, pStateAPP->currentDPI);
+        lpMMI->ptMinTrackSize.y = scale(H_MIN_mainWindow, pStateAPP->currentDPI);
         return 0; // Return 0 to tell Windows we handled this message
     }
     case WM_DESTROY: // -------------------------------------------------------------------------------- WM_DESTROY
     {
+        // Delete HFONT.
+        DeleteObject(getDpiAwareFont(pStateAPP->currentDPI));
+
         PostQuitMessage(0);
         return 0;
     }

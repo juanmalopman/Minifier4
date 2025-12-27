@@ -6,7 +6,7 @@
 
 #define STR_LEN(str) ((sizeof(str) / sizeof(str[0])) - 1)
 
-#define CONSOLE_PREFIX_NUMBER L"99999"
+#define CONSOLE_PREFIX_NUMBER L"99999" // Visual limit to line numbering, then loops.
 #define CONSOLE_PREFIX_CHARS L": "
 #define CONSOLE_PREFIX CONSOLE_PREFIX_NUMBER CONSOLE_PREFIX_CHARS
 
