@@ -3,12 +3,16 @@
 // INCLUDES
 //
 
-#include "framework.h"
-#include "GUI.h"
+#include "app_base.h"
+#include <dwmapi.h> // For dark mode title bars. (Library added to CMakeLists.txt).
+#include <uxtheme.h> // Dark mode scroll bars and buttons. (Library added to CMakeLists.txt).
+#include <richedit.h> // For the rich edit control used as a console.
+#include <shellscalingapi.h> // Allows getting monitor DPI to scale the GUI. ("shcore.lib" library added to CMakeLists.txt).
+#include "main_window.h"
 #include "resource.h"
-#include "callbackWNDPROC.h"
-#include "printRichEdit.h"
-#include "minificationSetup.h"
+#include "window_messages.h"
+#include "app_logging.h"
+#include "minify_config.h"
 
 //
 // GLOBAL VARIABLES

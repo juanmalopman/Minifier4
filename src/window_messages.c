@@ -3,12 +3,15 @@
 // INCLUDES
 //
 
-#include "framework.h"
-#include "callbackWNDPROC.h"
-#include "GUI.h"
-#include "printRichEdit.h"
-#include "minificationSetup.h"
-#include "commonItemDialog.h"
+#include "app_base.h"
+#include <vsstyle.h> // Required for BP_CHECKBOX (Redrawing radio buttons).
+#include <vssym32.h> // Required for CBS_UNCHECKEDNORMAL (Redrawing radio buttons).
+#include <commctrl.h> // Allows some UI controls to be subclassed and some messages handled to change their graphics. (Library added to CMakeLists.txt).
+#include "window_messages.h"
+#include "main_window.h"
+#include "app_logging.h"
+#include "minify_config.h"
+#include "file_picker.h"
 
 //
 // GLOBAL VARIABLES

@@ -3,11 +3,12 @@
 // INCLUDES
 //
 
-#include "framework.h"
-#include "GUI.h"
-#include "commonItemDialog.h"
-#include "minificationSetup.h"
-#include "printRichEdit.h"
+#include "app_base.h"
+#include <shobjidl.h> // Required for pick folder/file dialogs.
+#include "main_window.h"
+#include "file_picker.h"
+#include "minify_config.h"
+#include "app_logging.h"
 
 //
 // GLOBAL VARIABLES

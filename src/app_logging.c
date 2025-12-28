@@ -3,10 +3,11 @@
 // INCLUDES
 //
 
-#include "framework.h"
-#include "printRichEdit.h"
-#include "callbackWNDPROC.h"
-#include "GUI.h"
+#include "app_base.h"
+#include <richedit.h> // For the rich edit control used as a console.
+#include "app_logging.h"
+#include "window_messages.h"
+#include "main_window.h"
 
 //
 // GLOBAL VARIABLES

@@ -3,10 +3,10 @@
 // INCLUDES
 //
 
-#include "framework.h"
+#include "app_base.h"
 #include "main.h"
-#include "GUI.h"
-#include "minificationSetup.h"
+#include "main_window.h"
+#include "minify_config.h"
 
 //
 // GLOBAL VARIABLES

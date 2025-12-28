@@ -3,10 +3,11 @@
 // INCLUDES
 //
 
-#include "framework.h"
-#include "minificationSetup.h"
-#include "printRichEdit.h"
-#include "GUI.h"
+#include "app_base.h"
+#include <shellapi.h> // Required for CommandLineToArgvW
+#include "minify_config.h"
+#include "app_logging.h"
+#include "main_window.h"
 
 //
 // GLOBAL VARIABLES
