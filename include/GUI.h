@@ -30,8 +30,10 @@ typedef enum enumOfHwnds // To keep track of all window handles.
         staticOutputSpacerText,
         staticOutFileSpacerLine,
         staticOutFileSpacerText,
-        staticBorderForEditControl,
-        staticBackgroundForEditControl,
+        staticPathStripBorder,
+        staticPathStripBkgnd,
+        staticOutDirBorder,
+        staticOutDirBkgnd,
     staticEnd,
 
     richEditStart               = staticEnd, // Fix index
@@ -62,6 +64,7 @@ typedef enum enumOfHwnds // To keep track of all window handles.
 
     editStart                   = checkboxEnd, // Fix index
         editPathStrip           = checkboxEnd, // Fix index
+        editOutDir,
     editEnd,
     
     // This must always be last. It tells us the size of the array.
@@ -86,12 +89,13 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 #define GRAY_BKG RGB(32, 32, 32)
 #define WHITE_TXT RGB(255, 255, 255)
 #define PathStrip_TXT L"Stripe PATH Seg."
+#define OutDir_TXT L"Out. Dir. PATH"
 
 #define BASE_DPI 96
 
 // In logical pixels that will get scaled:
 #define W_MIN_mainWindow 700
-#define H_MIN_mainWindow 475
+#define H_MIN_mainWindow 485
 #define W_rightMenu 150
 #define H_radio 20
 #define H_button 26

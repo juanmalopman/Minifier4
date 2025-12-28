@@ -152,7 +152,7 @@ bool createStaticControls(HINSTANCE hInstance, StateGUI* pStateGUI)
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
-    static const wchar_t* staticText[] = { L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"" };
+    static const wchar_t* staticText[] = { L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"", L"", L"" };
     static_assert( _countof(staticText) == (staticEnd - staticStart), "Count mismatch: Update the staticText array!");
     DWORD staticStyle =  WS_CHILD | WS_VISIBLE | SS_CENTER;
     for (uint8_t i = staticStart; i < staticEnd; i++)
@@ -170,8 +170,9 @@ bool createStaticControls(HINSTANCE hInstance, StateGUI* pStateGUI)
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
     }
 
-    // Swap Z order, staticBorderForEditControl needs to be on top of staticBackgroundForEditControl.
-    SetWindowPos(pStateGUI->hwnds[staticBackgroundForEditControl], pStateGUI->hwnds[staticBorderForEditControl - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    // Swap Z order, staticWhateverBorder needs to be on top of staticWhateverpBkgnd.
+    SetWindowPos(pStateGUI->hwnds[staticPathStripBkgnd], pStateGUI->hwnds[staticPathStripBorder - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    SetWindowPos(pStateGUI->hwnds[staticOutDirBkgnd], pStateGUI->hwnds[staticOutDirBorder - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
     return 1;
 }
@@ -237,15 +238,15 @@ bool createEditControls(HINSTANCE hInstance, StateGUI* pStateGUI)
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
     // "You cannot set a cue banner on a multiline edit control or on a rich edit control."
-    static const wchar_t* editControlCueBanner[] = { PathStrip_TXT };
+    static const wchar_t* editControlCueBanner[] = { PathStrip_TXT, OutDir_TXT };
     static_assert( _countof(editControlCueBanner) == (editEnd- editStart), "Count mismatch: Update the editControlCueBanner array!");
     for (uint8_t i = editStart; i < editEnd; i++)
     {
-        DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER;
+        DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER | ES_AUTOHSCROLL | WS_TABSTOP;
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"EDIT", L"", editControlStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
         { errorPopup(L"Edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)getDpiAwareFont(pStateGUI->currentDPI), TRUE);
-        Edit_SetCueBannerText(pStateGUI->hwnds[i], L"Stip Path Segment");
+        Edit_SetCueBannerText(pStateGUI->hwnds[i], editControlCueBanner[i - editStart]);
     }
 
     return 1;
@@ -373,10 +374,10 @@ LayoutCtx layoutInit(UINT dpi, int x, int y, int width)
 }
 
 // Place a control and advance the cursor 'Y'.
-void layoutPlace(LayoutCtx* ctx, HWND hwnd, int h)
+void layoutPlace(LayoutCtx* pCtx, HWND hwnd, int h)
 {
-    MoveWindow(hwnd, ctx->x, ctx->y, ctx->width, h, TRUE);
-    ctx->y += (h + ctx->gapItem);
+    MoveWindow(hwnd, pCtx->x, pCtx->y, pCtx->width, h, TRUE);
+    pCtx->y += (h + pCtx->gapItem);
 }
 
 // Calculate the required size for the text in a control.
@@ -423,25 +424,25 @@ SIZE calculateControlTextSize(HWND hwnd)
 }
 
 // Place a static control with the text of a section. Autosizes based on content.
-void layoutLabel(LayoutCtx* ctx, HWND hwnd)
+void layoutLabel(LayoutCtx* pCtx, HWND hwnd)
 {
     // Calculate exact size required in physical (scaled) pixels.
     SIZE sz = calculateControlTextSize(hwnd);
     
-    MoveWindow(hwnd, ctx->x, ctx->y, sz.cx, sz.cy, TRUE);
+    MoveWindow(hwnd, pCtx->x, pCtx->y, sz.cx, sz.cy, TRUE);
 
     // Move Y past the label
-    ctx->y += sz.cy; 
+    pCtx->y += sz.cy; 
 }
 
 // Manually add vertical space.
-void layoutSpace(LayoutCtx* ctx, int spacePhysical)
+void layoutSpace(LayoutCtx* pCtx, int spacePhysical)
 {
-    ctx->y += spacePhysical;
+    pCtx->y += spacePhysical;
 }
 
 // Autosize and center editPathStrip control.
-void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
+void layoutEditControl(HWND editControl, HWND backgroundStaticControl, StateGUI* pStateGUI, LayoutCtx* pCtx)
 {
     // All controls except the rich edits share the same font. Get the height.
     SIZE sz = { };
@@ -451,9 +452,9 @@ void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
 
     if (!hText) return;
 
-    // editPathStrip should be centered in staticBackgroundForEditControl. Get it's position and size relative to the screen.
+    // Edit controls get centered in a static control serving as background. Get it's position and size relative to the screen.
     RECT rc = { };
-    GetWindowRect(pStateGUI->hwnds[staticBackgroundForEditControl], &rc);
+    GetWindowRect(backgroundStaticControl, &rc);
 
     // Make position and size relative to the mainWindow.
     const UINT UPDATE_LEFT_TOP_RIGHT_BOTTOM = 4; // Ask MapWindowPoints to update the 4 rc points.
@@ -466,13 +467,13 @@ void layoutEditStrip(StateGUI* pStateGUI, LayoutCtx* ctx)
     int xStatic = rc.left;
     int yStatic = rc.top;
 
-    int wEdit = wStatic - ctx->gapItem * 2; // Avoid overlap with subjacent static control's border.
+    int wEdit = wStatic - pCtx->gapItem * 2; // Avoid overlap with subjacent static control's border.
     int hEdit = hText;
     int xPosEdit = xStatic + (wStatic - wEdit) / 2;
     int yPosEdit = yStatic + (hStatic - hEdit) / 2;
     
-    // Make editPathStrip as high as the text and position it in the center of staticBackgroundForEditControl.
-    MoveWindow(pStateGUI->hwnds[editPathStrip], xPosEdit, yPosEdit, wEdit, hEdit, TRUE);
+    // Make editPathStrip as high as the text and position it in the center of staticPathStripBkgnd.
+    MoveWindow(editControl, xPosEdit, yPosEdit, wEdit, hEdit, TRUE);
 }
 
 // Stores and returns the latest font. Deletes old fonts when dpi changes.
@@ -621,9 +622,9 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
                 int yFrameStripCtl = ctx.y;
 
                 // Background and border.
-                layoutPlace(&ctx, pStateGUI->hwnds[staticBackgroundForEditControl], hButton);
+                layoutPlace(&ctx, pStateGUI->hwnds[staticPathStripBkgnd], hButton);
                 ctx.y = yFrameStripCtl; // Restore cursor position to same place.
-                layoutPlace(&ctx, pStateGUI->hwnds[staticBorderForEditControl], hButton);
+                layoutPlace(&ctx, pStateGUI->hwnds[staticPathStripBorder], hButton);
 
                 // Don't draw nested edit control yet.
             }
@@ -631,6 +632,16 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
             // buttonOutDir.
             if (i == radioButtonOutFilePath)
             {
+
+                int yFrameOutDirCtl = ctx.y;
+
+                // Background and border.
+                layoutPlace(&ctx, pStateGUI->hwnds[staticOutDirBkgnd], hButton);
+                ctx.y = yFrameOutDirCtl; // Restore cursor position to same place.
+                layoutPlace(&ctx, pStateGUI->hwnds[staticOutDirBorder], hButton);
+
+                // Don't draw nested edit control yet.
+
                 layoutPlace(&ctx, pStateGUI->hwnds[buttonOutDir], hButton);
             }
         }
@@ -651,7 +662,10 @@ LRESULT sizeControls(StateGUI* pStateGUI, LPARAM lParam)
     }
 
     // Autosize and position editPathStrip. 
-    layoutEditStrip(pStateGUI, &ctx);
+    layoutEditControl(pStateGUI->hwnds[editPathStrip], pStateGUI->hwnds[staticPathStripBkgnd], pStateGUI, &ctx);
+
+    // Autosize and position editOutDir. 
+    layoutEditControl(pStateGUI->hwnds[editOutDir], pStateGUI->hwnds[staticOutDirBkgnd], pStateGUI, &ctx);
 
     // Repaint
     InvalidateRect(pStateGUI->hwnds[mainWindow], nullptr, TRUE);
@@ -675,4 +689,14 @@ void updateMenuSelections(StateGUI* pStateGUI)
 
     // Update edit controls text.
     SetWindowTextW(pStateGUI->hwnds[editPathStrip], pStateGUI->pMiniCfg->stripSeg);
+    SetWindowTextW(pStateGUI->hwnds[editOutDir], pStateGUI->pMiniCfg->outPath);
+
+    // Update input rich edit control.
+    if (!pStateGUI->pMiniCfg->inPath[0]) return;
+    wchar_t inputFile[MAX_PATH];
+    swprintf_s(inputFile, MAX_PATH, L"File: %s", pStateGUI->pMiniCfg->inPath);
+    CHARRANGE cr = { 0, -1 };
+    SendMessageW(pStateGUI->hwnds[richEditInput], EM_EXSETSEL, 0, (LPARAM)&cr);
+    SendMessageW(pStateGUI->hwnds[richEditInput], EM_REPLACESEL, TRUE, (LPARAM)inputFile);
 }
+

@@ -8,6 +8,7 @@
 #include "GUI.h"
 #include "printRichEdit.h"
 #include "minificationSetup.h"
+#include "commonItemDialog.h"
 
 //
 // GLOBAL VARIABLES
@@ -95,13 +96,25 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         parseArgumentsCLI(pStateGUI, (PWSTR)pCds->lpData);
         return TRUE;
     }
-    case WM_SIZE:
+    case WM_COMMAND: // -------------------------------------------------------------------------------- WM_COMMAND
+    {
+        if (HIWORD(wParam) != BN_CLICKED) break;
+
+        if (LOWORD(wParam) == buttonFiles) chooseInPath(pStateGUI);
+
+        if (LOWORD(wParam) == buttonOutDir) chooseOutPath(pStateGUI);
+
+        if (LOWORD(wParam) == buttonGo) alertPopup(L"buttonGo");
+
+        break;
+    }
+    case WM_SIZE: // ----------------------------------------------------------------------------------- WM_SIZE
     {
         if (hWnd != pStateGUI->hwnds[mainWindow]) { break; }
         
         return sizeControls(pStateGUI, lParam);
     }
-    case WM_DPICHANGED:
+    case WM_DPICHANGED: // ----------------------------------------------------------------------------- WM_DPICHANGED
     {
         // We're not dragging different windows between monitors but using one only window.
         if (hWnd != pStateGUI->hwnds[mainWindow]) { break; }
@@ -145,7 +158,7 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         SetBkColor((HDC)wParam, GRAY_BKG); // Behind text letters
         SetDCBrushColor((HDC)wParam, GRAY_BKG); // Background other than behind text
 
-        if ((HWND)lParam == pStateGUI->hwnds[staticBackgroundForEditControl])
+        if ((HWND)lParam == pStateGUI->hwnds[staticPathStripBkgnd])
         {
             SetDCBrushColor((HDC)wParam, RGB(0,0,0)); // Background other than behind text
         }
