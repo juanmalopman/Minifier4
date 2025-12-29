@@ -96,7 +96,7 @@ LRESULT CALLBACK callbackWNDPROC(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
     {
         // Arguments forwarded by a recently executed instance before terminating.
         COPYDATASTRUCT* pCds = (COPYDATASTRUCT*)lParam;
-        parseArgumentsCLI(pStateGUI, (PWSTR)pCds->lpData);
+        parseArgumentsCLI(pStateGUI->pMiniCfg, pStateGUI, (PWSTR)pCds->lpData);
         return TRUE;
     }
     case WM_COMMAND: // -------------------------------------------------------------------------------- WM_COMMAND

@@ -7,6 +7,8 @@
 #include "main.h"
 #include "main_window.h"
 #include "minify_config.h"
+#include "app_logging.h" // TODO: Only here for testing getMangledNameByIndex
+#include "window_messages.h" // TODO: Only here for testing getMangledNameByIndex
 
 //
 // GLOBAL VARIABLES
@@ -28,12 +30,10 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANC
     loadMinificationSettings(&miniCfg, &stateGUI);
 
     // If the -noGUI flag is set, do the converion and exit here.
-    if (!parseArgumentsCLI(&stateGUI, nullptr)) return 0;
+    if (!parseArgumentsCLI(&miniCfg, nullptr, nullptr)) return 0;
     
-
     // Create the main window and all the child controls.
     if (!initializeGUI(hInstance, &stateGUI)){ return 1; }
-
     
     // Message loop.
     MSG msg = { 0 };
