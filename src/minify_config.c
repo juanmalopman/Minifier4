@@ -71,7 +71,7 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
     {
     	if (_wcsicmp(argv[i], L"--help") == 0 || _wcsicmp(argv[i], L"-h") == 0)
         {
-            // Print help info.
+            // TODO: Print help info.
         }
     	if (_wcsicmp(argv[i], L"--goNow") == 0)
         {
