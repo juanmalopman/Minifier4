@@ -10,6 +10,7 @@
 #include "minify_config.h"
 #include "app_logging.h"
 #include "main_window.h"
+#include "file_utils.h"
 
 //
 // CONFIGURATION CONSTANTS
@@ -20,27 +21,85 @@ static constexpr wchar_t LETTERS[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno
 static constexpr size_t LETTERS_CNT = _countof(LETTERS) - 1;
 static constexpr wchar_t ALPHANUM[] = L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
 static constexpr size_t ALPHANUM_CNT = _countof(ALPHANUM) - 1;
+static constexpr wchar_t CONFIG_FILENAME[] = L"CONFIG";
 
 //
 // FUNCTIONS
 //
 
-void miniCfgInit(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
+void miniCfgSave(MiniCfg* pMiniCfg)
 {
-	// TODO: Load last used settings.
+    wchar_t path[MAX_PATH] = { };
+    if (fileUtilsGetAppDataPath(path))
+    {
+        if (fileUtilsSaveToFile(path, CONFIG_FILENAME, (LPCVOID)pMiniCfg, sizeof(MiniCfg)))
+        {
+            appLogPrint(L"Settings saved.", APP_LOG_TO_CONSOLE);
+            return;
+        }
+    }
+
+    appLogPrint(L"Failed to save settings.", APP_LOG_TO_CONSOLE);    
+}
+
+void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
+{
+    bool isStartup = false;
+    if (!(pStateGUI->pMiniCfg))  isStartup = true;
+
+    // Make stateGUI struct hold the pointer pMiniCfg.
+    pStateGUI->pMiniCfg = pMiniCfg;
+
+    bool loadedSuccessfully = false;
+    wchar_t path[MAX_PATH] = { };
+    if (fileUtilsGetAppDataPath(path))
+    {
+        void* buffer = nullptr;
+        size_t len = 0;
+        if (fileUtilsReadFromFile(path, CONFIG_FILENAME, &buffer, &len))
+        {
+            if (buffer && len == sizeof(MiniCfg))
+            {
+                // Copy the raw bytes from the read buffer into the struct.
+                memcpy(pMiniCfg, buffer, sizeof(MiniCfg));
+                loadedSuccessfully = true;
+            }
+
+            if (buffer)
+            {
+                free(buffer);
+            }
+        }
+    }
+
+
+    if (loadedSuccessfully && isStartup) return;
+
+    if (loadedSuccessfully)
+    {
+        appLogPrint(L"Settings loaded successfully.", APP_LOG_TO_CONSOLE);
+        mainWindowUpdateControls(pStateGUI);
+        return;
+    }
+
+    if (!isStartup)
+    {
+        appLogPrint(L"Failed to load settings.", APP_LOG_TO_CONSOLE);
+        return;
+    }
+
 	pMiniCfg->alreadyPresentGUI = false;
-    pMiniCfg->flagNoGUI = false;
+    pMiniCfg->flagHeadless = false;
     pMiniCfg->prevPath[0] = 0;
     pMiniCfg->inPath[0] = 0;
     pMiniCfg->inputType = radioButtonHTML;
     pMiniCfg->defaultToPrevFile = true;
     pMiniCfg->mangle = true;
-    pMiniCfg->outFile = radioButtonOutFileStrip;
+    pMiniCfg->outOpt = radioButtonOutFileStrip;
     pMiniCfg->stripSeg[0] = 0;
     pMiniCfg->outPath[0] = 0;
 
-
-    pStateGUI->pMiniCfg = pMiniCfg;
+    mainWindowUpdateControls(pStateGUI);
 }
 
 bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs)
@@ -64,72 +123,88 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
         return true;
     }
 
-    bool goNow = 0;
+    bool run = 0;
 
     // The executable PATH is always the first argument of GetCommandLineW() return value. Skip it with i = 1. 
     for (int i = 1; i < argc; ++i)
     {
-    	if (_wcsicmp(argv[i], L"--help") == 0 || _wcsicmp(argv[i], L"-h") == 0)
+    	if (!_wcsicmp(argv[i], L"--help") || !_wcsicmp(argv[i], L"-h"))
         {
             // TODO: Print help info.
         }
-    	if (_wcsicmp(argv[i], L"--goNow") == 0)
+    	if (!_wcsicmp(argv[i], L"--run"))
         {
-            goNow = true;
+            run = true;
         }
-        else if (_wcsicmp(argv[i], L"--noGUI") == 0)
+        else if (!_wcsicmp(argv[i], L"--headless"))
         {
-            pMiniCfg->flagNoGUI = true;
+            pMiniCfg->flagHeadless = true;
         }
-        else if (_wcsicmp(argv[i], L"--input") == 0 && i + 1 < argc)
+        else if (!_wcsicmp(argv[i], L"--input") && i + 1 < argc)
         {
             // Get the path to the file to minify.
             wcscpy_s(pMiniCfg->inPath, MAX_PATH, argv[++i]);
         }
-        else if (_wcsicmp(argv[i], L"--dfltToPrev") == 0)
+        else if (!_wcsicmp(argv[i], L"--defaults"))
         {
             pMiniCfg->defaultToPrevFile = true;
         }
-        else if (_wcsicmp(argv[i], L"--noDfltToPrev") == 0)
+        else if (!_wcsicmp(argv[i], L"--no-defaults"))
         {
             pMiniCfg->defaultToPrevFile = false;
         }
-        else if (_wcsicmp(argv[i], L"--mangle") == 0)
+        else if (!_wcsicmp(argv[i], L"--mangle"))
         {
             pMiniCfg->mangle = true;
         }
-        else if (_wcsicmp(argv[i], L"--noMangle") == 0)
+        else if (!_wcsicmp(argv[i], L"--no-mangle"))
         {
             pMiniCfg->mangle = false;
         }
-        else if (_wcsicmp(argv[i], L"--HTML") == 0)
+        else if (!_wcsicmp(argv[i], L"--HTML"))
         {
             pMiniCfg->inputType = radioButtonHTML;
         }
-        else if (_wcsicmp(argv[i], L"--JS") == 0)
+        else if (!_wcsicmp(argv[i], L"--JS"))
         {
             pMiniCfg->inputType = radioButtonJS;
         }
-        else if (_wcsicmp(argv[i], L"--CSS") == 0)
+        else if (!_wcsicmp(argv[i], L"--CSS"))
         {
             pMiniCfg->inputType = radioButtonCSS;
         }
-        else if (_wcsicmp(argv[i], L"--noOutFile") == 0)
+        else if (!_wcsicmp(argv[i], L"--no-out-file"))
         {
         	// No output file to create.
-            pMiniCfg->outFile = radioButtonNoOutFile;
+            pMiniCfg->outOpt = radioButtonNoOutFile;
         }
-        else if (_wcsicmp(argv[i], L"--outStrip") == 0 && i + 1 < argc)
+        else if (!_wcsicmp(argv[i], L"--out-strip") && i + 1 < argc)
         {
         	// PATH segment to stip specified.
-            pMiniCfg->outFile = radioButtonOutFileStrip;
+            pMiniCfg->outOpt = radioButtonOutFileStrip;
             wcscpy_s(pMiniCfg->stripSeg, MAX_PATH, argv[++i]);
         }
-        else if (_wcsicmp(argv[i], L"--outPath") == 0 && i + 1 < argc)
+        else if (!_wcsicmp(argv[i], L"--out-path") && i + 1 < argc)
         {
             // Complete output PATH specified.
-            pMiniCfg->outFile = radioButtonOutFilePath;
+            pMiniCfg->outOpt = radioButtonOutFilePath;
             wcscpy_s(pMiniCfg->outPath, MAX_PATH, argv[++i]);
+        }
+        else if (!_wcsicmp(argv[i], L"--out-file") && i + 1 < argc)
+        {
+            // Custom output filename specified.
+            pMiniCfg->outFileName = true;
+            wcscpy_s(pMiniCfg->outFile, MAX_PATH, argv[++i]);
+        }
+        else if (!_wcsicmp(argv[i], L"--load"))
+        {
+            // Load last saved settings.
+            miniCfgLoad(pMiniCfg, pStateGUI);
+        }
+        else if (!_wcsicmp(argv[i], L"--save"))
+        {
+            // Save current settings.
+            miniCfgSave(pMiniCfg);
         }
         else
         {
@@ -145,9 +220,9 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
     // See if there's a GUI already.
     if (pStateGUI && pStateGUI->hwnds[countOfHwnd - 1]) pMiniCfg->alreadyPresentGUI = true;
 
-    if (pMiniCfg->flagNoGUI && !(pMiniCfg->alreadyPresentGUI))
+    if (pMiniCfg->flagHeadless && !(pMiniCfg->alreadyPresentGUI))
     {
-	    // Trigger a minification right away. No use of checking --goNow in a --noGUI execution.
+	    // Trigger a minification right away. No use of checking --run in a --noGUI execution.
         // minify(html)
 
         // Don't render a GUI, just terminate the process.
@@ -157,7 +232,7 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
     // Apply changes dictated by the just updated minifier options.
     if (pStateGUI) mainWindowUpdateControls(pStateGUI);
 
-    if (goNow)
+    if (run)
     {
     	// Trigger a delayed minification. Post to wndProc and wait for windows to be ready somehow? Checking hwnds[countOfHwnds - 1] maybe.
         // PostMessageW(MSGCUSTOM_MINIFY);

@@ -21,7 +21,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANC
     // Load default minification settings.
     MiniCfg miniCfg = { };
     StateGUI stateGUI = { };
-    miniCfgInit(&miniCfg, &stateGUI);
+    miniCfgLoad(&miniCfg, &stateGUI);
 
     // If the -noGUI flag is set, do the converion and exit here.
     if (!miniCfgParseCLI(&miniCfg, nullptr, nullptr)) return 0;

@@ -23,6 +23,8 @@ static void internalAppendToRichEditControl(_In_ HWND hWnd,_In_  LPARAM lParam)
 {
     SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
     SendMessageW(hWnd, EM_REPLACESEL, 0, lParam);
+    SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+    SendMessageW(hWnd, EM_REPLACESEL, 0, (LPARAM)L"\n");
     SendMessageW(hWnd, WM_VSCROLL, SB_BOTTOM, 0);
     free((wchar_t*)lParam); // Free heap.
 }
@@ -98,13 +100,35 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
     }
     case WM_COMMAND: // -------------------------------------------------------------------------------- WM_COMMAND
     {
+        if (HIWORD(wParam) != EN_CHANGE)
+        {
+            switch LOWORD(wParam)
+            {
+            case editFilename: GetDlgItemText(hWnd, editFilename, pStateGUI->pMiniCfg->outFile, MAX_PATH); break;
+            case editPathStrip: GetDlgItemText(hWnd, editPathStrip, pStateGUI->pMiniCfg->stripSeg, MAX_PATH); break;
+            case editOutDir: GetDlgItemText(hWnd, editOutDir, pStateGUI->pMiniCfg->outPath, MAX_PATH); break;
+            }
+        }
+
         if (HIWORD(wParam) != BN_CLICKED) break;
 
-        if (LOWORD(wParam) == buttonFiles) filePickerInPath(pStateGUI);
-
-        if (LOWORD(wParam) == buttonOutDir) filePickerOutPath(pStateGUI);
-
-        if (LOWORD(wParam) == buttonGo) appLogAlertPop(L"buttonGo");
+        switch LOWORD(wParam)
+        {
+        case buttonFiles: filePickerInPath(pStateGUI); break;
+        case buttonOutDir: filePickerOutPath(pStateGUI); break;
+        case buttonLoad: miniCfgLoad(pStateGUI->pMiniCfg, pStateGUI); break;
+        case buttonSave: miniCfgSave(pStateGUI->pMiniCfg); break;
+        case buttonGo: appLogAlertPop(L"buttonGo"); break;
+        case radioButtonHTML: pStateGUI->pMiniCfg->inputType = radioButtonHTML; break;
+        case radioButtonCSS: pStateGUI->pMiniCfg->inputType = radioButtonCSS; break;
+        case radioButtonJS: pStateGUI->pMiniCfg->inputType = radioButtonJS; break;
+        case radioButtonNoOutFile: pStateGUI->pMiniCfg->outOpt = radioButtonNoOutFile; break;
+        case radioButtonOutFileStrip: pStateGUI->pMiniCfg->outOpt = radioButtonOutFileStrip; break;
+        case radioButtonOutFilePath: pStateGUI->pMiniCfg->outOpt = radioButtonOutFilePath; break;
+        case checkboxDefaultToPrev: pStateGUI->pMiniCfg->defaultToPrevFile = IsDlgButtonChecked(hWnd, checkboxDefaultToPrev); break;
+        case checkboxMangle: pStateGUI->pMiniCfg->mangle = IsDlgButtonChecked(hWnd, checkboxMangle); break;
+        case checkboxFilename: pStateGUI->pMiniCfg->outFileName = IsDlgButtonChecked(hWnd, checkboxFilename); break;
+        }   
 
         break;
     }

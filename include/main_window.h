@@ -37,6 +37,10 @@ typedef enum enumOfHwnds : int // To keep track of all window handles.
         staticOutputSpacerText,
         staticOutFileSpacerLine,
         staticOutFileSpacerText,
+        staticSettingsSpacerLine,
+        staticSettingsSpacerText,
+        staticFilenameBorder,
+        staticFilenameBkgnd,
         staticPathStripBorder,
         staticPathStripBkgnd,
         staticOutDirBorder,
@@ -61,16 +65,20 @@ typedef enum enumOfHwnds : int // To keep track of all window handles.
     buttonStart                 = radioButtonEnd, // Fix index
         buttonFiles             = radioButtonEnd, // Fix index
         buttonOutDir,
+        buttonLoad,
+        buttonSave,
         buttonGo,
     buttonEnd,
 
     checkboxStart               = buttonEnd, // Fix index
         checkboxDefaultToPrev   = buttonEnd, // Fix index
         checkboxMangle,
+        checkboxFilename,
     checkboxEnd,
 
     editStart                   = checkboxEnd, // Fix index
-        editPathStrip           = checkboxEnd, // Fix index
+        editFilename            = checkboxEnd, // Fix index
+        editPathStrip,
         editOutDir,
     editEnd,
     

@@ -21,12 +21,10 @@
 //
 
 static constexpr wchar_t mainWindowClass[] = L"mainWindowClass";
-static constexpr wchar_t PathStrip_TXT[] = L"Stripe PATH Seg.";
-static constexpr wchar_t OutDir_TXT[] = L"Out. Dir. PATH";
 static constexpr UINT BASE_DPI = 96;
 // In logical pixels that will get scaled:
 static constexpr int W_MIN_mainWindow = 700;
-static constexpr int H_MIN_mainWindow = 485;
+static constexpr int H_MIN_mainWindow = 620;
 static constexpr int W_rightMenu = 150;
 static constexpr int H_radio = 20;
 static constexpr int H_button = 26;
@@ -157,7 +155,7 @@ static bool internalCreateStaticControls(_In_ HINSTANCE hInstance, _Inout_ State
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
-    static const wchar_t* staticText[] = { L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"", L"", L"" };
+    static const wchar_t* staticText[] = {L"", L"Input", L"", L"Output", L"", L"Out. File", L"", L"Settings", L"", L"", L"", L"", L"", L""};
     static_assert( _countof(staticText) == (staticEnd - staticStart), "Count mismatch: Update the staticText array!");
     DWORD staticStyle =  WS_CHILD | WS_VISIBLE | SS_CENTER;
     for (uint8_t i = staticStart; i < staticEnd; i++)
@@ -176,6 +174,7 @@ static bool internalCreateStaticControls(_In_ HINSTANCE hInstance, _Inout_ State
     }
 
     // Swap Z order, staticWhateverBorder needs to be on top of staticWhateverpBkgnd.
+    SetWindowPos(pStateGUI->hwnds[staticFilenameBkgnd], pStateGUI->hwnds[staticFilenameBorder - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     SetWindowPos(pStateGUI->hwnds[staticPathStripBkgnd], pStateGUI->hwnds[staticPathStripBorder - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     SetWindowPos(pStateGUI->hwnds[staticOutDirBkgnd], pStateGUI->hwnds[staticOutDirBorder - 1], 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
@@ -186,7 +185,7 @@ static bool internalCreateRadioButtonControls(_In_ HINSTANCE hInstance, _Inout_ 
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
-    static const wchar_t* radioButtonText[] = { L"HTML", L"CSS", L"JS", L"No out. file", L"On stripped path", L"On custom path"};
+    static const wchar_t* radioButtonText[] = {L"HTML", L"CSS", L"JS", L"No out. file", L"On stripped path", L"On custom path"};
     static_assert( _countof(radioButtonText) == (radioButtonEnd - radioButtonStart), "Count mismatch: Update the radioButtonText array!" );
     DWORD radioButtonStyle =  WS_CHILD | WS_VISIBLE | BS_AUTORADIOBUTTON;
     for (uint8_t i = radioButtonStart; i < radioButtonEnd; i++)
@@ -210,7 +209,7 @@ static bool internalCreateButtonControls(_In_ HINSTANCE hInstance, _Inout_ State
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
-    static const wchar_t* buttonText[] = { L"Files...", L"Out. Dir.", L"GO !"};
+    static const wchar_t* buttonText[] = {L"Files...", L"Out. Dir.", L"Reload", L"Save", L"GO !"};
     static_assert( _countof(buttonText) == (buttonEnd - buttonStart), "Count mismatch: Update the buttonText array!");
     for (uint8_t i = buttonStart; i < buttonEnd; i++)
     {
@@ -226,7 +225,7 @@ static bool internalCreateCheckboxControls(_In_ HINSTANCE hInstance, _Inout_ Sta
 {
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
-    static const wchar_t* checkboxText[] = { L"Default to prev. HTML", L"Mangle"};
+    static const wchar_t* checkboxText[] = {L"Default to prev. HTML", L"Mangle", L"Custom filename"};
     static_assert( _countof(checkboxText) == (checkboxEnd - checkboxStart), "Count mismatch: Update the checkboxText array!" );
     DWORD checkboxStyle =  WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX;
     for (uint8_t i = checkboxStart; i < checkboxEnd; i++)
@@ -243,7 +242,7 @@ static bool internalCreateEditControls(_In_ HINSTANCE hInstance, _Inout_ StateGU
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     // Sets HMENU (the id of each) to the corresponding enum value.
     // "You cannot set a cue banner on a multiline edit control or on a rich edit control."
-    static const wchar_t* editControlCueBanner[] = { PathStrip_TXT, OutDir_TXT };
+    static const wchar_t* editControlCueBanner[] = {L"Out. Filename", L"Stripe PATH Seg.", L"Out. Dir. PATH"};
     static_assert( _countof(editControlCueBanner) == (editEnd- editStart), "Count mismatch: Update the editControlCueBanner array!");
     for (uint8_t i = editStart; i < editEnd; i++)
     {
@@ -615,6 +614,16 @@ LRESULT mainWindowSizing(StateGUI* pStateGUI, LPARAM lParam)
         internalLayoutLabel(&ctx, pStateGUI->hwnds[staticOutFileSpacerText]);
         internalLayoutSpace(&ctx, smallGap);
 
+        internalLayoutPlace(&ctx, pStateGUI->hwnds[checkboxFilename], hRadio);
+
+        {
+            int yFrameStripCtl = ctx.y;
+            // Background and border.
+            internalLayoutPlace(&ctx, pStateGUI->hwnds[staticFilenameBkgnd], hButton);
+            ctx.y = yFrameStripCtl; // Restore cursor position to same place.
+            internalLayoutPlace(&ctx, pStateGUI->hwnds[staticFilenameBorder], hButton);
+        }
+
         for (uint8_t i = radioButtonNoOutFile; i <= radioButtonOutFilePath; i++)
         {
             internalLayoutPlace(&ctx, pStateGUI->hwnds[i], hRadio);
@@ -657,12 +666,36 @@ LRESULT mainWindowSizing(StateGUI* pStateGUI, LPARAM lParam)
         internalLayoutPlace(&ctx, pStateGUI->hwnds[staticOutFileSpacerLine], hFrame);
     }
 
+    // Right menu - Section "settings".
+    {
+        int topOfSettings = ctx.y;
+
+        ctx = internalLayoutInit(dpi, xCtrl, topOfSettings, wCtrl);
+
+        internalLayoutLabel(&ctx, pStateGUI->hwnds[staticSettingsSpacerText]);
+        internalLayoutSpace(&ctx, smallGap);
+
+        internalLayoutPlace(&ctx, pStateGUI->hwnds[buttonLoad], hButton);
+        internalLayoutPlace(&ctx, pStateGUI->hwnds[buttonSave], hButton);
+
+        // Draw group encasing frame.
+        int topFrame = topOfSettings + gap;
+        int hFrame = ctx.y + smallGap - topFrame;
+        ctx = internalLayoutInit(dpi, xMenu, topFrame, wMenu);
+
+        internalLayoutPlace(&ctx, pStateGUI->hwnds[staticSettingsSpacerLine], hFrame);
+
+    }
+
     // Right menu - buttonGo.
     {
         internalLayoutSpace(&ctx, smallGap);
 
         internalLayoutPlace(&ctx, pStateGUI->hwnds[buttonGo], hButton);
     }
+
+    // Autosize and position editFilename. 
+    internalLayoutEditControl(pStateGUI->hwnds[editFilename], pStateGUI->hwnds[staticFilenameBkgnd], pStateGUI, &ctx);
 
     // Autosize and position editPathStrip. 
     internalLayoutEditControl(pStateGUI->hwnds[editPathStrip], pStateGUI->hwnds[staticPathStripBkgnd], pStateGUI, &ctx);
@@ -681,7 +714,7 @@ void mainWindowUpdateControls(StateGUI* pStateGUI)
 {
     // Update radio buttons selection status. Deselections are automatic.
     PostMessageW(pStateGUI->hwnds[pStateGUI->pMiniCfg->inputType], BM_CLICK, 0, 0);
-    PostMessageW(pStateGUI->hwnds[pStateGUI->pMiniCfg->outFile], BM_CLICK, 0, 0);
+    PostMessageW(pStateGUI->hwnds[pStateGUI->pMiniCfg->outOpt], BM_CLICK, 0, 0);
 
     // Update checkboxes selection status.
     WPARAM checkState;
@@ -689,8 +722,11 @@ void mainWindowUpdateControls(StateGUI* pStateGUI)
     PostMessageW( pStateGUI->hwnds[checkboxDefaultToPrev], BM_SETCHECK, checkState, 0);
     checkState = pStateGUI->pMiniCfg->mangle ? BST_CHECKED : BST_UNCHECKED;
     PostMessageW( pStateGUI->hwnds[checkboxMangle], BM_SETCHECK, checkState, 0);
+    checkState = pStateGUI->pMiniCfg->outFileName ? BST_CHECKED : BST_UNCHECKED;
+    PostMessageW( pStateGUI->hwnds[checkboxFilename], BM_SETCHECK, checkState, 0);
 
     // Update edit controls text.
+    SetWindowTextW(pStateGUI->hwnds[editFilename], pStateGUI->pMiniCfg->outFile);
     SetWindowTextW(pStateGUI->hwnds[editPathStrip], pStateGUI->pMiniCfg->stripSeg);
     SetWindowTextW(pStateGUI->hwnds[editOutDir], pStateGUI->pMiniCfg->outPath);
 

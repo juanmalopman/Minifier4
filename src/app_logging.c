@@ -104,6 +104,8 @@ void appLogAlertPop(LPCWSTR message)
 
 void appLogErrorPop(LPCWSTR message)
 {
+    // TODO: Return a message through CLI if headless.
+    // TODO: Get last error info.
     MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONERROR);
 }
 
