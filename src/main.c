@@ -1,19 +1,13 @@
 
 //
-// INCLUDES
+// DEPENDENCIES
 //
 
-#include "app_base.h"
-#include "main.h"
+#include <windows.h>
+#include <stdint.h> // int64_t, uint32_t, etc.
+#include <wchar.h> // swprintf_s, wcslen, etc.
 #include "main_window.h"
 #include "minify_config.h"
-#include "app_logging.h" // TODO: Only here for testing getMangledNameByIndex
-#include "window_messages.h" // TODO: Only here for testing getMangledNameByIndex
-
-//
-// GLOBAL VARIABLES
-//
-
 
 //
 // FUNCTIONS
@@ -22,18 +16,18 @@
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
     // If other instance is running, forward arguments and exit. // TODO: Handle forwarding when target is mid-processing.
-    if (!checkForReadilyRunningInstance()) return 0;
+    if (!mainWindowCheckForOtherInstance()) return 0;
 
     // Load default minification settings.
     MiniCfg miniCfg = { };
     StateGUI stateGUI = { };
-    loadMinificationSettings(&miniCfg, &stateGUI);
+    miniCfgInit(&miniCfg, &stateGUI);
 
     // If the -noGUI flag is set, do the converion and exit here.
-    if (!parseArgumentsCLI(&miniCfg, nullptr, nullptr)) return 0;
+    if (!miniCfgParseCLI(&miniCfg, nullptr, nullptr)) return 0;
     
     // Create the main window and all the child controls.
-    if (!initializeGUI(hInstance, &stateGUI)){ return 1; }
+    if (!mainWindowInit(hInstance, &stateGUI)){ return 1; }
     
     // Message loop.
     MSG msg = { 0 };

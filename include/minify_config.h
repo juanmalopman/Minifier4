@@ -1,26 +1,17 @@
 #pragma once
 
 //
+// DEPENDENCIES
+//
+
+#include <windows.h>
+#include <wchar.h> // swprintf_s, wchar_t, etc.
+
+//
 // FORWARD DECLARATIONS
 //
 
 typedef struct StateGUI StateGUI;
-
-
-//
-// DEFINES
-//
-
-
-//
-// LOCAL VARIABLES
-//
-
-static const wchar_t* const prohibitedNamesJS[] = {L"do", L"if", L"in", L"for" };
-static constexpr wchar_t LETTERS[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-static constexpr size_t LETTERS_CNT = _countof(LETTERS) - 1;
-static constexpr wchar_t ALPHANUM[] = L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-static constexpr size_t ALPHANUM_CNT = _countof(ALPHANUM) - 1;
 
 //
 // STRUCTS
@@ -32,10 +23,10 @@ typedef struct MiniCfg
 	bool flagNoGUI;
 	wchar_t prevPath[MAX_PATH];
 	wchar_t inPath[MAX_PATH];
-    uint8_t inputType;
+    int inputType;
     bool defaultToPrevFile;
     bool mangle;
-    uint8_t outFile;
+    int outFile;
     wchar_t stripSeg[MAX_PATH];
     wchar_t outPath[MAX_PATH];
 } MiniCfg;
@@ -48,14 +39,9 @@ typedef struct NameGenerator
 } NameGenerator;
 
 //
-// GLOBAL VARIABLES
+// FUNCTION PROTOTYPES
 //
 
-
-//
-// FUNCTIONS
-//
-
-void loadMinificationSettings(MiniCfg*, StateGUI*);
-bool parseArgumentsCLI(MiniCfg*, StateGUI*, PWSTR);
-void getMangledNameByIndex(uint64_t, wchar_t*);
+void miniCfgInit(_Out_ MiniCfg* pMiniCfg, _Out_ StateGUI* pStateGUI);
+bool miniCfgParseCLI(_In_ MiniCfg* pMiniCfg, _In_ StateGUI* pStateGUI, _In_opt_z_ PWSTR forwardedArgs);
+void miniCfgGetMangled(_In_ int index, _Out_ wchar_t* buffer);

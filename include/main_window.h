@@ -1,6 +1,13 @@
 #pragma once
 
 //
+// DEPENDENCIES
+//
+
+#include <windows.h>
+#include <wchar.h> // swprintf_s, wcslen, etc.
+
+//
 // FORWARD DECLARATIONS
 //
 
@@ -10,7 +17,7 @@ typedef struct MiniCfg MiniCfg;
 // ENUMS
 //
 
-typedef enum PreferredAppMode
+typedef enum PreferredAppMode : int
 {
    PreferredAppMode_Default,
    PreferredAppMode_AllowDark,
@@ -19,7 +26,7 @@ typedef enum PreferredAppMode
    PreferredAppMode_Max
 } PreferredAppMode;
 
-typedef enum enumOfHwnds // To keep track of all window handles.
+typedef enum enumOfHwnds : int // To keep track of all window handles.
 {
     mainWindow,
 
@@ -80,27 +87,13 @@ static_assert(editStart         == checkboxEnd,    "ERROR: Mangled enum, detecte
 static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detected gap between Edit and Count");
 
 //
-// DEFINES
+// CONFIGURATION CONSTANTS
 //
 
-#define mainWindowName L"Minifier 4"
-#define mainWindowClass L"mainWindowClass"
-
-#define GRAY_BKG RGB(32, 32, 32)
-#define WHITE_TXT RGB(255, 255, 255)
-#define PathStrip_TXT L"Stripe PATH Seg."
-#define OutDir_TXT L"Out. Dir. PATH"
-
-#define BASE_DPI 96
-
-// In logical pixels that will get scaled:
-#define W_MIN_mainWindow 700
-#define H_MIN_mainWindow 485
-#define W_rightMenu 150
-#define H_radio 20
-#define H_button 26
-#define GAP_normal 10
-#define GAP_small 4
+static constexpr wchar_t MAIN_WINDOW_NAME[] = L"Minifier 4";
+static constexpr COLORREF MAIN_WINDOW_GRAY_BKG = RGB(32, 32, 32);
+static constexpr COLORREF MAIN_WINDOW_WHITE_TXT = RGB(255, 255, 255);
+static constexpr LRESULT MAIN_WINDOW_CDRF_NOTHANDLED = -1; // Custom LRETURN for mainWindowRadioBtnCustomDraw.
 
 //
 // TYPEDEFS
@@ -133,27 +126,13 @@ typedef struct LayoutCtx
 } LayoutCtx;
 
 //
-// VARIABLES
+// FUNCTION PROTOTYPES
 //
 
-
-//
-// FUNCTIONS
-//
-
-bool checkForReadilyRunningInstance();
-int initializeGUI(HINSTANCE, StateGUI*);
-LRESULT sizeControls(StateGUI*, LPARAM);
-UINT getWindowDPI(HWND);
-HFONT getDpiAwareFont(UINT);
-void updateMenuSelections(StateGUI*);
-
-//
-// STATIC INLINE FUNCTIONS
-//
-
-// Scale logical pixels to physical device pixels
-static inline int scale(int val, UINT dpi)
-{
-    return MulDiv(val, (int)dpi, BASE_DPI);
-}
+bool mainWindowCheckForOtherInstance();
+int mainWindowInit(_In_ HINSTANCE hInstance, _Inout_ StateGUI* pStateGUI);
+LRESULT mainWindowSizing(_In_ StateGUI* pStateGUI, _In_ LPARAM lParam);
+HFONT mainWindowGetFont(_In_ UINT dpi);
+void mainWindowUpdateControls(_In_ StateGUI* pStateGUI);
+LRESULT mainWindowRadioBtnCustomDraw(_Inout_ LPARAM lParam, _In_ StateGUI* pStateGUI);
+LRESULT mainWindowHandleGetMinMaxInfo(_Out_ LPARAM lParam, _In_ StateGUI* pStateGUI);

@@ -5,6 +5,7 @@ setlocal
 set "BUILD_TYPE=Debug"
 set "COMPILER_MODE=MSVC"
 set "TARGET_PRESET=debug"
+set "CMAKE_EXTRA_ARGS=-DBUILD_HEADERS_ONLY=OFF"
 
 :: --- 2: Argument Parsing Loop ---
 :PARSE_ARGS
@@ -18,6 +19,9 @@ if /I "%~1"=="/msvc"  set "COMPILER_MODE=MSVC" & shift & goto :PARSE_ARGS
 :: Check for Build Type
 if /I "%~1"=="release" set "BUILD_TYPE=Release" & shift & goto :PARSE_ARGS
 if /I "%~1"=="debug"   set "BUILD_TYPE=Debug" & shift & goto :PARSE_ARGS
+
+:: Check for Headers Only flag
+if /I "%~1"=="--headers" set "CMAKE_EXTRA_ARGS=-DBUILD_HEADERS_ONLY=ON" & shift & goto :PARSE_ARGS
 
 shift
 goto :PARSE_ARGS
@@ -90,7 +94,7 @@ echo [Info] Using bundled CMake: "%CMAKE_EXE%"
 :: --- Step 2: Configure ---
 echo.
 echo [1/2] Configuring Project (%COMPILER_MODE%)...
-"%CMAKE_EXE%" --preset %CONFIG_PRESET%
+"%CMAKE_EXE%" --preset %CONFIG_PRESET% %CMAKE_EXTRA_ARGS%
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 :: --- Step 3: Build ---

@@ -1,24 +1,31 @@
 
 //
-// INCLUDES
+// DEPENDENCIES
 //
 
-#include "app_base.h"
+#include <windows.h>
+#include <stdint.h> // int64_t, uint32_t, etc.
+#include <wchar.h> // swprintf_s, wcslen, etc.
 #include <shellapi.h> // Required for CommandLineToArgvW
 #include "minify_config.h"
 #include "app_logging.h"
 #include "main_window.h"
 
 //
-// GLOBAL VARIABLES
+// CONFIGURATION CONSTANTS
 //
 
+static const wchar_t* const prohibitedNamesJS[] = {L"do", L"if", L"in", L"for" };
+static constexpr wchar_t LETTERS[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+static constexpr size_t LETTERS_CNT = _countof(LETTERS) - 1;
+static constexpr wchar_t ALPHANUM[] = L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+static constexpr size_t ALPHANUM_CNT = _countof(ALPHANUM) - 1;
 
 //
 // FUNCTIONS
 //
 
-void loadMinificationSettings(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
+void miniCfgInit(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
 {
 	// TODO: Load last used settings.
 	pMiniCfg->alreadyPresentGUI = false;
@@ -36,12 +43,12 @@ void loadMinificationSettings(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
     pStateGUI->pMiniCfg = pMiniCfg;
 }
 
-bool parseArgumentsCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs)
+bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs)
 {
 	// Split argument string into the individual constituent arguments. 
     int argc = 0;
     PWSTR* argv;
-    if (forwardedArgs != nullptr)
+    if (forwardedArgs != NULL)
     {
         argv = CommandLineToArgvW(forwardedArgs, &argc);
     }
@@ -128,7 +135,7 @@ bool parseArgumentsCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedAr
         {
         	wchar_t unrecognizedArg[MAX_PATH];
         	swprintf_s(unrecognizedArg, MAX_PATH, L"ERROR: Unrecognized argument: %s", argv[i]);
-        	errorPopup(unrecognizedArg);
+        	appLogErrorPop(unrecognizedArg);
         }
     }
 
@@ -148,7 +155,7 @@ bool parseArgumentsCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedAr
     }
 
     // Apply changes dictated by the just updated minifier options.
-    if (pStateGUI) updateMenuSelections(pStateGUI);
+    if (pStateGUI) mainWindowUpdateControls(pStateGUI);
 
     if (goNow)
     {
@@ -160,7 +167,7 @@ bool parseArgumentsCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedAr
 }
 
 // Initialize the generator by shuffling the alphabets and storing them in a static NameGenerator stuct.
-NameGenerator* initMangledNamesGenerator()
+static NameGenerator* internalInitGenerator()
 {
     static NameGenerator gen = { };
     LARGE_INTEGER li;
@@ -193,7 +200,7 @@ NameGenerator* initMangledNamesGenerator()
 }
 
 // Helper to check reserved JS words.
-bool nameIsAllowedInJS(const wchar_t* mangledName)
+static bool internalNameIsAllowedInJS(_In_ const wchar_t* mangledName)
 {
     bool nameAllowed = true;
     for (uint16_t i = 0; i < _countof(prohibitedNamesJS); i++)
@@ -208,20 +215,20 @@ bool nameIsAllowedInJS(const wchar_t* mangledName)
 // Reason is some executions add an offset by means of skippedNameIndexes to future calls.
 // Previously assigned indices may be requested at any time to retrieve the original result.
 static NameGenerator* gen = nullptr;
-static uint64_t skippedNameIndexes[_countof(prohibitedNamesJS)] = { };
-static uint16_t namesSkippedCount = 0;
+static int skippedNameIndexes[_countof(prohibitedNamesJS)] = { };
+static int namesSkippedCount = 0;
 static SRWLOCK getMangledNameRWLock = SRWLOCK_INIT; // Read-write lock.
 static INIT_ONCE onceFlag = INIT_ONCE_STATIC_INIT;
 // This runs exactly once to set up the generator and the mutex.
-BOOL CALLBACK getMangledNameByIndexHelperRunOnce([[maybe_unused]] PINIT_ONCE InitOnce, [[maybe_unused]] PVOID Parameter, [[maybe_unused]] PVOID* Context)
+static BOOL CALLBACK internalGetMangledHelpRunOnce([[maybe_unused]] _In_opt_ PINIT_ONCE InitOnce, [[maybe_unused]] _In_opt_ PVOID Parameter, [[maybe_unused]] _In_opt_ PVOID* Context)
 {
-    gen = initMangledNamesGenerator();
+    gen = internalInitGenerator();
     return TRUE;
 }
-void getMangledNameByIndex(uint64_t index, wchar_t* buffer)
+void miniCfgGetMangled(int index, wchar_t* buffer)
 {
     // Ensure gen is initialized in a thread-safe way.
-    InitOnceExecuteOnce(&onceFlag, getMangledNameByIndexHelperRunOnce, NULL, NULL);
+    InitOnceExecuteOnce(&onceFlag, internalGetMangledHelpRunOnce, NULL, NULL);
 
     while (1)
     {
@@ -254,7 +261,7 @@ void getMangledNameByIndex(uint64_t index, wchar_t* buffer)
         buffer[pos] = '\0'; // Null terminate.
 
         // If this generated name is a not a reserved keyword, exit.
-        if (nameIsAllowedInJS(buffer)) return;
+        if (internalNameIsAllowedInJS(buffer)) return;
 
         // If it is reserved, get a different one.
         AcquireSRWLockExclusive(&getMangledNameRWLock);
@@ -272,7 +279,7 @@ void getMangledNameByIndex(uint64_t index, wchar_t* buffer)
         {
             if (namesSkippedCount == _countof(prohibitedNamesJS))
             {
-                errorPopup(L"ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
+                appLogErrorPop(L"ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
                 index++;
                 continue;
             }

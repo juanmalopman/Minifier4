@@ -1,31 +1,33 @@
 
 //
-// INCLUDES
+// DEPENDENCIES
 //
 
-#include "app_base.h"
+#include <windows.h>
+#include <stdint.h> // int64_t, uint32_t, etc.
+#include <wchar.h> // swprintf_s, wcslen, etc.
 #include <richedit.h> // For the rich edit control used as a console.
 #include "app_logging.h"
 #include "window_messages.h"
 #include "main_window.h"
 
 //
-// GLOBAL VARIABLES
-//
-
-
-//
 // FUNCTIONS
 //
 
+static HWND mainWindowHWND = nullptr;
+void appLogSetup(HWND hMain)
+{
+    mainWindowHWND = hMain;
+}
 
-// Sends a fully formatted string to the UI thread.
-void postToMainWindow(HWND hMain, wchar_t* buffer, UINT whichControl)
+// Sends a string to the UI thread.
+static void internalPostToMainWindow(_In_ wchar_t* buffer, _In_ UINT whichControl)
 {
     if (!buffer) { return; }
 
     // Use PostMessage (Asynchronous).
-    BOOL result = PostMessageW(hMain, whichControl, 0, (LPARAM)buffer);
+    BOOL result = PostMessageW(mainWindowHWND, whichControl, 0, (LPARAM)buffer);
 
     // If the message wasn't posted, free heap memory here.
     if (!result) { free(buffer); }
@@ -33,9 +35,13 @@ void postToMainWindow(HWND hMain, wchar_t* buffer, UINT whichControl)
     return;
 }
 
-void print(HWND hMain, const wchar_t* message, UINT whichControl)
+void appLogPrint(const wchar_t* message, UINT whichControl)
 {
-	if (!message) return;
+    if (!message) return;
+
+    if (!whichControl) return;
+
+    if (!mainWindowHWND) return;
 
     // Calculate buffer size.
     size_t len = wcslen(message);
@@ -46,34 +52,40 @@ void print(HWND hMain, const wchar_t* message, UINT whichControl)
     len += 1;
 
     // For richEditConsole, we will also add "99999: ".
-    if (whichControl == TO_CONSOLE) len += wcslen(CONSOLE_PREFIX);
+    if (whichControl == APP_LOG_TO_CONSOLE) len += wcslen(APP_LOG_CONSOLE_PREFIX);
 
-    // Allocate heap.
+    // ALLOCATION STRATEGY: Asynchronous Ownership Transfer.
+    // The heap-allocated buffer is passed to the UI thread via PostMessage (lParam).
+    // The receiving window procedure (windowMessagesCallback) assumes full ownership
+    // and is responsible for calling free() after processing.
     wchar_t* buffer = (wchar_t*)malloc(sizeof(wchar_t) * len);
     if (!buffer) return; // Out of memory
 
     // For richEditConsole, we will also add "99999: \r\n", 9 wchars.
-    if (whichControl == TO_CONSOLE)
+    if (whichControl == APP_LOG_TO_CONSOLE)
     {
-        swprintf_s(buffer, len, L"%s%s", CONSOLE_PREFIX, message);
+        swprintf_s(buffer, len, L"%s%s", APP_LOG_CONSOLE_PREFIX, message);
     }
     else
     {
-    	wcscpy_s(buffer, len, message);
+        wcscpy_s(buffer, len, message);
     }
-	postToMainWindow(hMain, buffer, whichControl);    
+    internalPostToMainWindow(buffer, whichControl);    
 }
 
-void printInteger(HWND hMain, int64_t number, UINT whichControl)
+void appLogPrintInt(int64_t number, UINT whichControl)
 {
+    if (!whichControl) return;
+
+    if (!mainWindowHWND) return;
+
 	// Max we can have is "-9223372036854775808\0", 21 wchars.
 	wchar_t integerMaxBuffer[21] = { };
 	swprintf_s(integerMaxBuffer, _countof(integerMaxBuffer), L"%lld", number);
-	print(hMain, (const wchar_t*)integerMaxBuffer, whichControl);
+	appLogPrint((const wchar_t*)integerMaxBuffer, whichControl);
 }
 
-
-void setRichEditFormatting(HWND richEditControl)
+void appLogSetFormatting(HWND richEditControl)
 {
 	CHARFORMATW monospaceCustomFont = { };
 	monospaceCustomFont.cbSize = sizeof(CHARFORMATW);
@@ -85,13 +97,13 @@ void setRichEditFormatting(HWND richEditControl)
     SendMessageW(richEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
 }
 
-void alertPopup(LPCWSTR message)
+void appLogAlertPop(LPCWSTR message)
 {
-	MessageBoxW(NULL, message, mainWindowName, MB_OK | MB_ICONINFORMATION);
+	MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
 }
 
-void errorPopup(LPCWSTR message)
+void appLogErrorPop(LPCWSTR message)
 {
-    MessageBoxW(NULL, message, mainWindowName, MB_OK | MB_ICONERROR);
+    MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONERROR);
 }
 

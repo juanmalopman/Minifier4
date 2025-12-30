@@ -1,28 +1,14 @@
 #pragma once
 
 //
-// FORWARD DECLARATIONS
+// DEPENDENCIES
 //
 
+#include "main_window.h"
 
 //
-// DEFINES
+// FUNCTION PROTOTYPES
 //
 
-
-//
-// STRUCTS
-//
-
-
-//
-// GLOBAL VARIABLES
-//
-
-
-//
-// FUNCTIONS
-//
-
-void chooseInPath(StateGUI*);
-void chooseOutPath(StateGUI*);
+void filePickerInPath(_In_ StateGUI* pStateGUI);
+void filePickerOutPath(_In_ StateGUI* pStateGUI);

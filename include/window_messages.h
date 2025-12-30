@@ -1,33 +1,26 @@
 #pragma once
 
 //
+// DEPENDENCIES
+//
+
+#include <windows.h>
+
+//
 // ENUMS
 //
 
-enum
+typedef enum windowMessagesCustom : UINT
 {
-	START_OF_AVAILABLE_MSG_IDS = WM_APP,
+	WINDOW_MESSAGES_START_OF_AVAILABLE_MSG_IDS = WM_APP,
 	MSGCUSTOM_PRINTINPUT,
 	MSGCUSTOM_PRINTOUTPUT,
 	MSGCUSTOM_PRINTCONSOLE
-};
-
-//
-// DEFINES
-//
-
-#define TO_INPUT MSGCUSTOM_PRINTINPUT
-#define TO_OUTPUT MSGCUSTOM_PRINTOUTPUT
-#define TO_CONSOLE MSGCUSTOM_PRINTCONSOLE
-
-
-//
-// GLOBAL VARIABLES
-// 
+}windowMessagesCustom;
 
 
 //
 // FUNCTIONS
 //
 
-LRESULT CALLBACK callbackWNDPROC(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK windowMessagesCallback(_In_ HWND hWnd, _In_ UINT uMsg, _In_ WPARAM wParam, _In_ LPARAM lParam);

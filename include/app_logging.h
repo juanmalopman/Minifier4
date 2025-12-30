@@ -1,30 +1,38 @@
 #pragma once
 
 //
-// DEFINES
+// DEPENDENCIES
 //
 
-#define STR_LEN(str) ((sizeof(str) / sizeof(str[0])) - 1)
-
-#define CONSOLE_PREFIX_NUMBER L"99999" // Visual limit to line numbering, then loops.
-#define CONSOLE_PREFIX_CHARS L": "
-#define CONSOLE_PREFIX CONSOLE_PREFIX_NUMBER CONSOLE_PREFIX_CHARS
-
-#define CONSOLE_NUMBER_LEN STR_LEN(CONSOLE_PREFIX_NUMBER)
-#define CONSOLE_PREFIX_LEN STR_LEN(CONSOLE_PREFIX)
+#include <windows.h>
+#include <stdint.h> // int64_t, uint32_t, etc.
+#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <window_messages.h>
 
 //
-// GLOBAL VARIABLES
+// CONFIGURATION CONSTANTS
 //
 
+#define RAW_PREFIX_NUM   L"99999"
+#define RAW_PREFIX_CHARS L": "
+static constexpr wchar_t APP_LOG_CONSOLE_PREFIX[] = RAW_PREFIX_NUM RAW_PREFIX_CHARS;
+static constexpr wchar_t APP_LOG_CONSOLE_PREFIX_NUMBER[] = RAW_PREFIX_NUM;
+static constexpr wchar_t APP_LOG_CONSOLE_PREFIX_CHARS[]  = RAW_PREFIX_CHARS;
+#undef RAW_PREFIX_NUM
+#undef RAW_PREFIX_CHARS
+static constexpr size_t APP_LOG_CONSOLE_NUMBER_LEN = _countof(APP_LOG_CONSOLE_PREFIX_NUMBER) - 1;
+static constexpr size_t APP_LOG_CONSOLE_PREFIX_LEN = _countof(APP_LOG_CONSOLE_PREFIX) - 1;
+static constexpr UINT APP_LOG_TO_INPUT = MSGCUSTOM_PRINTINPUT;
+static constexpr UINT APP_LOG_TO_OUTPUT = MSGCUSTOM_PRINTOUTPUT;
+static constexpr UINT APP_LOG_TO_CONSOLE = MSGCUSTOM_PRINTCONSOLE;
 
 //
-// FUNCTIONS
+// FUNCTION PROTOTYPES
 //
 
-void print(HWND, const wchar_t*, UINT);
-void printInteger(HWND, int64_t, UINT);
-void printLineNumbering();
-void setRichEditFormatting(HWND);
-void alertPopup(LPCWSTR);
-void errorPopup(LPCWSTR);
+void appLogSetup(_In_ HWND hMain);
+void appLogPrint(_In_z_ const wchar_t* message, _In_ UINT whichControl);
+void appLogPrintInt(_In_ int64_t number, _In_ UINT whichControl);
+void appLogSetFormatting(_In_ HWND richEditControl);
+void appLogAlertPop(_In_z_ LPCWSTR message);
+void appLogErrorPop(_In_z_ LPCWSTR message);
