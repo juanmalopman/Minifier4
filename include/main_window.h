@@ -57,6 +57,7 @@ typedef enum enumOfHwnds : int // To keep track of all window handles.
         radioButtonHTML         = richEditEnd, // Fix index
         radioButtonCSS,
         radioButtonJS,
+        radioButtonAutodetect,
         radioButtonNoOutFile,
         radioButtonOutFileStrip,
         radioButtonOutFilePath,
@@ -71,8 +72,9 @@ typedef enum enumOfHwnds : int // To keep track of all window handles.
     buttonEnd,
 
     checkboxStart               = buttonEnd, // Fix index
-        checkboxDefaultToPrev   = buttonEnd, // Fix index
+        checkboxFallbackToPrev   = buttonEnd, // Fix index
         checkboxMangle,
+        checkboxRandomMangle,
         checkboxFilename,
     checkboxEnd,
 
@@ -142,5 +144,6 @@ int mainWindowInit(_In_ HINSTANCE hInstance, _Inout_ StateGUI* pStateGUI);
 LRESULT mainWindowSizing(_In_ StateGUI* pStateGUI, _In_ LPARAM lParam);
 HFONT mainWindowGetFont(_In_ UINT dpi);
 void mainWindowUpdateControls(_In_ StateGUI* pStateGUI);
+void mainWindowEnableControls(_In_ StateGUI* pStateGUI, _In_ bool enable);
 LRESULT mainWindowRadioBtnCustomDraw(_Inout_ LPARAM lParam, _In_ StateGUI* pStateGUI);
 LRESULT mainWindowHandleGetMinMaxInfo(_Out_ LPARAM lParam, _In_ StateGUI* pStateGUI);

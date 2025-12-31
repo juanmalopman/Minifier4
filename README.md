@@ -51,7 +51,7 @@ Minifier4 provides two ways to optimize your files:
 
 2.  **Command Line Interface (CLI):**
     *   Ideal for automated build scripts or batch processing.
-    *   Run `Minifier4.exe --help` (or equivalent flags) in your terminal to view the current list of available arguments and automation options.
+    *   Run `Minifier4.exe --help` or `-h` in your terminal to view the current list of available arguments and automation options.
 
 ---
 

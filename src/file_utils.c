@@ -9,6 +9,7 @@
 #include "file_utils.h"
 #include "app_logging.h"
 #include <shlobj.h> // To get AppData PATH.
+#include <shlwapi.h> // PathCombineW()
 
 //
 // FUNCTIONS
@@ -24,8 +25,8 @@ bool fileUtilsGetAppDataPath(PWSTR path)
     	appLogErrorPop(L"Error getting AppData PATH.");
     	return false;
     }
-    
-    swprintf_s(path, MAX_PATH, L"%s\\Minifier4", tmpPath);
+
+    PathCombineW(path, tmpPath, L"Minifier4");
 
     // WinAPI requires us to free the memory allocated by the Shell.
     CoTaskMemFree(tmpPath);
@@ -52,7 +53,7 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 {
 	wchar_t fullPath[MAX_PATH] = { };
 
-	swprintf_s(fullPath, MAX_PATH, L"%s\\%s", filePath, filename);
+	PathCombineW(fullPath, filePath, filename);
 
 	HANDLE hFileToWrite = NULL;
 	hFileToWrite = CreateFileW(
@@ -75,7 +76,6 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 	// Speed up next write using FSCTL_SET_SPARSE.
 	// DeviceIoControl(hFileToWrite, FSCTL_SET_SPARSE, NULL, 0, NULL, 0, &bytesWritten, NULL);
 
-	
 	DWORD writtenCount = 0; // Bytes effectively written.
 	if (!WriteFile( hFileToWrite, buffer, len, &writtenCount, NULL ))
 	{
@@ -97,7 +97,7 @@ bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer,
 {
 	wchar_t fullPath[MAX_PATH] = { };
 
-	swprintf_s(fullPath, MAX_PATH, L"%s\\%s", filePath, filename);
+	PathCombineW(fullPath, filePath, filename);
 
 	HANDLE hFileToRead = nullptr;
 	hFileToRead = CreateFileW(

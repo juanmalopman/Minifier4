@@ -14,6 +14,7 @@
 #include "app_logging.h"
 #include "minify_config.h"
 #include "file_picker.h"
+#include "parser_common.h"
 
 //
 // FUNCTIONS
@@ -77,16 +78,16 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         // Cast the lParam back to our wchar_t pointer
         wchar_t* pMessage = (wchar_t*)lParam;
 
-        if (wcslen(pMessage) < APP_LOG_CONSOLE_PREFIX_LEN)
+        if (wcslen(pMessage) < APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1)
         {
             free(pMessage); // internalAppendToRichEditControl won't free the heap if we return 0 here.
             return 0;
         }
 
         // Copy the number as a null terminated array first, and then to lParam/pMessage.
-        wchar_t tempNum[APP_LOG_CONSOLE_PREFIX_LEN]; 
-        swprintf_s(tempNum, APP_LOG_CONSOLE_PREFIX_LEN, L"%05d", lineNumberToPrint);
-        wmemcpy_s(pMessage, APP_LOG_CONSOLE_PREFIX_LEN, tempNum, APP_LOG_CONSOLE_NUMBER_LEN);
+        wchar_t tempNum[APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1]; 
+        swprintf_s(tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, L"%05d", lineNumberToPrint);
+        wmemcpy_s(pMessage, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT);
 
         internalAppendToRichEditControl(pStateGUI->hwnds[richEditConsole], lParam);
         return 0;
@@ -118,16 +119,29 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         case buttonOutDir: filePickerOutPath(pStateGUI); break;
         case buttonLoad: miniCfgLoad(pStateGUI->pMiniCfg, pStateGUI); break;
         case buttonSave: miniCfgSave(pStateGUI->pMiniCfg); break;
-        case buttonGo: appLogAlertPop(L"buttonGo"); break;
+        case buttonGo:
+        {
+            pStateGUI->pMiniCfg->currentlyParsing = true;
+            mainWindowEnableControls(pStateGUI, false); // Disable all controls while parsing.
+            parserCommonRun(pStateGUI);
+            break;
+        }
         case radioButtonHTML: pStateGUI->pMiniCfg->inputType = radioButtonHTML; break;
         case radioButtonCSS: pStateGUI->pMiniCfg->inputType = radioButtonCSS; break;
         case radioButtonJS: pStateGUI->pMiniCfg->inputType = radioButtonJS; break;
+        case radioButtonAutodetect: pStateGUI->pMiniCfg->inputType = radioButtonAutodetect; break;
         case radioButtonNoOutFile: pStateGUI->pMiniCfg->outOpt = radioButtonNoOutFile; break;
         case radioButtonOutFileStrip: pStateGUI->pMiniCfg->outOpt = radioButtonOutFileStrip; break;
         case radioButtonOutFilePath: pStateGUI->pMiniCfg->outOpt = radioButtonOutFilePath; break;
-        case checkboxDefaultToPrev: pStateGUI->pMiniCfg->defaultToPrevFile = IsDlgButtonChecked(hWnd, checkboxDefaultToPrev); break;
-        case checkboxMangle: pStateGUI->pMiniCfg->mangle = IsDlgButtonChecked(hWnd, checkboxMangle); break;
-        case checkboxFilename: pStateGUI->pMiniCfg->outFileName = IsDlgButtonChecked(hWnd, checkboxFilename); break;
+        case checkboxFallbackToPrev: pStateGUI->pMiniCfg->fallbackToPrevFile = IsDlgButtonChecked(hWnd, checkboxFallbackToPrev); break;
+        case checkboxMangle:
+        {
+        pStateGUI->pMiniCfg->mangle = IsDlgButtonChecked(hWnd, checkboxMangle);
+        EnableWindow(GetDlgItem(hWnd, checkboxRandomMangle), pStateGUI->pMiniCfg->mangle); // Disable Randomize mangling if Mangle is unchecked.
+        break;
+        }
+        case checkboxRandomMangle: pStateGUI->pMiniCfg->randomMangle = IsDlgButtonChecked(hWnd, checkboxRandomMangle); break;
+        case checkboxFilename: pStateGUI->pMiniCfg->outFilename = IsDlgButtonChecked(hWnd, checkboxFilename); break;
         }   
 
         break;

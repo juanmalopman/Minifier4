@@ -1,0 +1,42 @@
+
+
+---------------------------------- Minifier 4 ----------------------------------
+Copyright (C) 2025 Juan Manuel Lopez Manzano 
+Licensed under the MIT License.
+
+Usage: Minifier4.exe [options]
+Options are case-insensitive and order-independent.
+
+GENERAL:
+  --help, -h                   Show this help information.
+  --run, -r                    Execute minification immediately.
+  --headless, -hd              Execute minification and exit (no GUI).
+
+CONFIGURATION:
+  --load, -l                   Load last saved settings.
+  --save, -s                   Save current settings.
+  --default, -d                Reset settings to defaults.
+                               (If input is set, default output becomes:
+                               <filename>_min.<ext>)
+
+INPUT / OUTPUT:
+  --input, -i <PATH>           Specify input file path.
+  --out-path, -op <PATH>       Specify output directory.
+  --out-file, -of <NAME>       Specify custom output filename.
+  --out-strip, -os <TEXT>      Text segment to remove from output path.
+  --no-out-file, -nof          Dry run (do not write to disk).
+
+MODE:
+  --HTML                       Process only if HTML (and linked assets).
+  --CSS                        Process only if CSS.
+  --JS                         Process only if JavaScript.
+  --auto-detect, -ad           Process HTML, CSS or JS inputs.
+
+PROCESSING BEHAVIOR:
+  --mangle, -m                 Enable name mangling (IDs, vars).
+  --no-mangle, -nm             Disable name mangling.
+  --random-mangle, -rm         Enable randomized mangling strings.
+  --no-random-mangle, -nrm     Disable randomized mangling strings.
+  --fallback, -f               Enable fallback to last success on error.
+  --no-fallback, -nf           Disable fallback on error.
+
