@@ -39,7 +39,7 @@ bool mainWindowCheckForOtherInstance()
 {
     // This instance hasn't got a window yet. If FindWindowExW returns a HWND there's another instance running.
     HWND readilyRunningInstance = FindWindowExW(NULL, NULL, mainWindowClass, MAIN_WINDOW_NAME);
-    if (!readilyRunningInstance) return 1;
+    if (!readilyRunningInstance) return true;
 
 
     
@@ -55,7 +55,7 @@ bool mainWindowCheckForOtherInstance()
     // Try to send WM_COPYDATA.
     for (uint8_t i = 0; i < 50 ; i++)
     {
-        if (SendMessageW(readilyRunningInstance, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&payload)) return 0; // Forwarded.
+        if (SendMessageW(readilyRunningInstance, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&payload)) return false; // Forwarded.
 
         // Wait between attempts.
         Sleep(5);
@@ -64,7 +64,7 @@ bool mainWindowCheckForOtherInstance()
     appLogErrorPop(L"ERROR: Couldn't forward arguments to a detected readily running instance.");
 
     // Avoid spamming new instances, close this one.
-    return 0;
+    return false;
 }
 
 static bool internalRegClass(_In_ HINSTANCE hInstance, _Out_ WNDCLASSEXW* pWc)
@@ -301,7 +301,7 @@ static void internalApplyDarkModeIfAvailable(_Inout_ StateGUI* pStateGUI)
     }
 }
 
-int mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
+bool mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
 {
 	// Enable dark theme/dark mode.
     HMODULE hUxtheme = nullptr;
@@ -309,31 +309,31 @@ int mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
 
     // Create window class.
     WNDCLASSEXW wc = { };
-    if (!internalRegClass(hInstance, &wc)) return 0;
+    if (!internalRegClass(hInstance, &wc)) return false;
    
     // Determine the initial DPI of the primary monitor.
     internalGetMonitorDPI(pStateGUI);
 
     // Create main window.
-    if (!internalCreateMainWindow(hInstance, pStateGUI)) return 0;
+    if (!internalCreateMainWindow(hInstance, pStateGUI)) return false;
    
     // Create rich edit controls.
-    if (!internalCreateRichEditControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateRichEditControls(hInstance, pStateGUI)) return false;
 
     // Create static controls.
-    if (!internalCreateStaticControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateStaticControls(hInstance, pStateGUI)) return false;
 
     // Create radio buttons.
-    if (!internalCreateRadioButtonControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateRadioButtonControls(hInstance, pStateGUI)) return false;
 
     // Create buttons.
-    if (!internalCreateButtonControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateButtonControls(hInstance, pStateGUI)) return false;
 
     // Create checkboxes.
-    if (!internalCreateCheckboxControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateCheckboxControls(hInstance, pStateGUI)) return false;
 
     // Create edit controls.
-    if (!internalCreateEditControls(hInstance, pStateGUI)) return 0;
+    if (!internalCreateEditControls(hInstance, pStateGUI)) return false;
 
     // Apply dark mode to everything.
     internalApplyDarkModeIfAvailable(pStateGUI);
@@ -353,13 +353,14 @@ int mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
     // Tell app_logging.c what the main window handle is.
     appLogSetup(pStateGUI->hwnds[mainWindow]);
 
-    appLogPrint(L"Minifier 4 - Juan Manuel López Manzano 2025", APP_LOG_TO_CONSOLE);
+    // Flush the pending messages now that there's a valid handle for the main app in the app_logging module. Only way to get the messages up to now.
+    appLogPrint(nullptr, APP_LOG_TO_CONSOLE);
 
     appLogPrint(L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
             "<meta name='viewport' content='width=device-width, initial-scale=1'>\r\n     <title>"
             "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>", APP_LOG_TO_INPUT);
 
-    return 1;
+    return true;
 }
 
 // Initialize the layout context.
@@ -781,4 +782,23 @@ LRESULT mainWindowHandleGetMinMaxInfo(LPARAM lParam, StateGUI* pStateGUI)
     lpMMI->ptMinTrackSize.x = internalScale(W_MIN_mainWindow, pStateGUI->currentDPI);
     lpMMI->ptMinTrackSize.y = internalScale(H_MIN_mainWindow, pStateGUI->currentDPI);
     return 0; // Return 0 to tell Windows we handled this message
+}
+
+// Create a message-only window for headless mode message handling.
+bool mainWindowMsgOnlyWindowInit(_In_ HINSTANCE hInstance,_Inout_ StateGUI* pStateGUI)
+{
+    // Create window class. Shares same function with the normal GUI execution.
+    WNDCLASSEXW wc = { };
+    if (!internalRegClass(hInstance, &wc)) return false;
+
+    // Create window with HWND_MESSAGE as the parent handle. pStateGUI passed as lParam in the same way the GUI function would do.
+    pStateGUI->hwnds[mainWindow] = CreateWindowEx( 0, mainWindowClass, MAIN_WINDOW_NAME, 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, GetModuleHandle(NULL), pStateGUI);
+
+    // Tell app_logging.c what the main window handle is.
+    appLogSetup(pStateGUI->hwnds[mainWindow]);
+
+    // Flush the pending messages now that there's a valid handle for the main app in the app_logging module. Only way to get the messages up to now.
+    appLogPrint(nullptr, APP_LOG_TO_CONSOLE);
+
+    return true;
 }

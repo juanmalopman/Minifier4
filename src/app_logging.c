@@ -12,10 +12,28 @@
 #include "main_window.h"
 
 //
+// STRUCTS
+//
+
+typedef struct PendingMessages
+{
+    wchar_t* heap;
+    UINT dstControl; 
+}PendingMessages;
+
+//
+// VARIABLES
+//
+
+static constexpr int PENDING_MAX = 100;
+static PendingMessages pendingMessages[PENDING_MAX] = { };
+static volatile int pendingMessagesIndex = 0;
+
+//
 // FUNCTIONS
 //
 
-static HWND mainWindowHWND = nullptr;
+static volatile HWND mainWindowHWND = nullptr;
 void appLogSetup(HWND hMain)
 {
     mainWindowHWND = hMain;
@@ -35,13 +53,45 @@ static void internalPostToMainWindow(_In_ wchar_t* buffer, _In_ UINT whichContro
     return;
 }
 
+
+static SRWLOCK appLogPrintRWLock = SRWLOCK_INIT; // Read-write lock.
 void appLogPrint(const wchar_t* message, UINT whichControl)
 {
-    if (!message) return;
-
     if (!whichControl) return;
 
-    if (!mainWindowHWND) return;
+    // No more buffer while waiting for mainWindowHWND. Discard message.
+    if (!mainWindowHWND && pendingMessagesIndex == 100) return;
+
+    // If there are pending messages and a mainWindowHWND available or inHeadlessMode is set.
+    {
+        bool pending = false;
+        AcquireSRWLockShared(&appLogPrintRWLock);
+        if (pendingMessagesIndex) pending = true;
+        ReleaseSRWLockShared(&appLogPrintRWLock);
+
+        if (pending && mainWindowHWND)
+        {
+            // Request write lock to mofify pendingMessagesIndex and send messages.
+            AcquireSRWLockExclusive(&appLogPrintRWLock);
+
+            // Check if another thread got the lock and did the job before.
+            if (pendingMessagesIndex)
+            {
+                // Send them all.
+                for (int i = 0; i < pendingMessagesIndex; i++)
+                {
+                    internalPostToMainWindow(pendingMessages[i].heap, pendingMessages[i].dstControl);                    
+                }
+                pendingMessagesIndex = 0;
+            }
+            ReleaseSRWLockExclusive(&appLogPrintRWLock);
+
+            // Continue processing the message that motivated this appLogPrint call.
+        }
+    }
+
+    // This return is after the pending messages flush to be able to trigger it with an empty call.
+    if (!message) return;
 
     // Calculate buffer size.
     size_t len = wcslen(message);
@@ -70,7 +120,39 @@ void appLogPrint(const wchar_t* message, UINT whichControl)
     {
         wcscpy_s(buffer, len, message);
     }
-    internalPostToMainWindow(buffer, whichControl);    
+
+    // If mainWindowHWND is ready to receive messages.
+    if (mainWindowHWND)
+    {
+       internalPostToMainWindow(buffer, whichControl); 
+    }
+    else
+    {
+        // Get write lock.
+        AcquireSRWLockExclusive(&appLogPrintRWLock);
+        
+        // Check if another thread got the lock before and took care of everything.
+        if (mainWindowHWND && !pendingMessagesIndex)
+        {
+            ReleaseSRWLockExclusive(&appLogPrintRWLock);
+            internalPostToMainWindow(buffer, whichControl);
+            return;
+        }
+
+        // Check if another thread got the lock before and occupied the last buffer index.
+        if (pendingMessagesIndex == 100)
+        {
+            ReleaseSRWLockExclusive(&appLogPrintRWLock);
+            return;
+        }
+
+        pendingMessages[pendingMessagesIndex].heap = buffer;
+        pendingMessages[pendingMessagesIndex].dstControl = whichControl;
+        pendingMessagesIndex++;
+
+        ReleaseSRWLockExclusive(&appLogPrintRWLock);
+    }
+        
 }
 
 void appLogPrintInt(int64_t number, UINT whichControl)

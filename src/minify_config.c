@@ -55,6 +55,8 @@ typedef enum enumOfArgs : int
     ARG_l,
     ARG_save,
     ARG_s,
+    ARG_close,
+    ARG_c,
     ARG_headless,
     ARG_hd,
     ARG_run,
@@ -114,6 +116,8 @@ static const wchar_t* const argStrs[] = {
     L"-l",
     L"--save",
     L"-s",
+    L"--close",
+    L"-c",
     L"--headless",
     L"-hd",
     L"--run",
@@ -363,7 +367,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_no_out_file:
         case ARG_nof:
         {
-            pMiniCfg->outOpt = radioButtonNoOutFile; // No output file to create.
+            pMiniCfg->outOpt = radioButtonNoOutFile;
             break;
         }
         case ARG_out_strip:
@@ -372,6 +376,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
             // If a strip segment was specified, store it.
             if (pStringParams->paramStripSeg[0])
             {
+                pMiniCfg->outOpt = radioButtonOutFileStrip;
                 wcscpy_s(pMiniCfg->stripSeg, MAX_PATH, pStringParams->paramStripSeg);
             }
             break;
@@ -382,6 +387,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
             // If a valid output path was specified, store it.
             if (pStringParams->paramOutPath[0] && GetFullPathNameW(pStringParams->paramOutPath, MAX_PATH, pathValidationBuffer, NULL))
             {
+                pMiniCfg->outOpt = radioButtonOutFilePath;
                 wcscpy_s(pMiniCfg->outPath, MAX_PATH, pathValidationBuffer);
             }
             break;
@@ -392,6 +398,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
             // If an output filename was specified, store it.
             if (pStringParams->paramOutFile[0])
             {
+                pMiniCfg->outFilename = true;
                 wcscpy_s(pMiniCfg->outFile, MAX_PATH, pStringParams->paramOutFile);
             }
             break;
@@ -407,6 +414,12 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         {
             miniCfgSave(pMiniCfg); // Save current settings.
             break;
+        }
+        case ARG_close:
+        case ARG_c:
+        {
+            PostQuitMessage(0);
+            return false;
         }
         case ARG_headless:
         case ARG_hd:
@@ -454,10 +467,6 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
     {
         appLogPrint(L"Forwarded arguments received but ignored. Parsing currently in progress.", APP_LOG_TO_CONSOLE);
     }
-    // Attach to the console that may have launched this application and redirect stdout to it.
-    AttachConsole(ATTACH_PARENT_PROCESS); // TODO: Ensure success.
-    FILE* stream;
-    freopen_s(&stream, "CONOUT$", "w", stdout);
 
 	// Split argument string into the individual constituent arguments. 
     int argc = 0;

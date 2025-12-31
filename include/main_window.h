@@ -140,10 +140,11 @@ typedef struct LayoutCtx
 //
 
 bool mainWindowCheckForOtherInstance();
-int mainWindowInit(_In_ HINSTANCE hInstance, _Inout_ StateGUI* pStateGUI);
+bool mainWindowInit(_In_ HINSTANCE hInstance, _Inout_ StateGUI* pStateGUI);
 LRESULT mainWindowSizing(_In_ StateGUI* pStateGUI, _In_ LPARAM lParam);
 HFONT mainWindowGetFont(_In_ UINT dpi);
 void mainWindowUpdateControls(_In_ StateGUI* pStateGUI);
 void mainWindowEnableControls(_In_ StateGUI* pStateGUI, _In_ bool enable);
 LRESULT mainWindowRadioBtnCustomDraw(_Inout_ LPARAM lParam, _In_ StateGUI* pStateGUI);
 LRESULT mainWindowHandleGetMinMaxInfo(_Out_ LPARAM lParam, _In_ StateGUI* pStateGUI);
+bool mainWindowMsgOnlyWindowInit(_In_ HINSTANCE hInstance,_Inout_ StateGUI* pStateGUI);
