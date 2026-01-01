@@ -530,7 +530,7 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
 
         wchar_t unrecognizedArg[MAX_PATH];
         swprintf_s(unrecognizedArg, MAX_PATH, L"ERROR: Unrecognized argument: %s", argv[a]);
-        appLogErrorPop(unrecognizedArg);
+        appLogError(unrecognizedArg);
         break;
     
     }

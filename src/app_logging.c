@@ -33,8 +33,13 @@ static volatile int pendingMessagesIndex = 0;
 // FUNCTIONS
 //
 
+void appLogAlertPop(LPCWSTR message)
+{
+    MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
+}
+
 static volatile HWND mainWindowHWND = nullptr;
-void appLogSetup(HWND hMain)
+void appLogPrintSetup(HWND hMain)
 {
     mainWindowHWND = hMain;
 }
@@ -179,15 +184,65 @@ void appLogSetFormatting(HWND richEditControl)
     SendMessageW(richEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
 }
 
-void appLogAlertPop(LPCWSTR message)
+
+static bool consoleAvailable = true;
+void appLogErrorSetup(bool consoleAvailableArg)
 {
-	MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
+    consoleAvailable = consoleAvailableArg;
 }
 
-void appLogErrorPop(LPCWSTR message)
+static wchar_t* internalGetSysErrorString(DWORD errorCode)
 {
-    // TODO: Return a message through CLI if headless.
-    // TODO: Get last error info.
-    MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONERROR);
+    if (errorCode == 0) return NULL;
+    wchar_t* buffer = NULL;
+    FormatMessageW(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        NULL, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        (LPWSTR)&buffer, 0, NULL
+    );
+    return buffer;
+}
+
+void appLogError(LPCWSTR message)
+{
+    DWORD errCode = GetLastError(); 
+    wchar_t* sysMsg = internalGetSysErrorString(errCode);
+
+    if (consoleAvailable)
+    {
+        fwprintf(stderr, L"[ERROR] %s", message);
+        if (sysMsg) fwprintf(stderr, L"\n\tSystem Code %lu: %ls", errCode, sysMsg);
+        fwprintf(stderr, L"\n");
+    }
+    else
+    {
+        wchar_t* fullBuf = NULL;
+        
+        if (sysMsg)
+        {
+            // 100 wchars is sufficient for the overhead
+            size_t len = wcslen(message) + wcslen(sysMsg) + 100; 
+            fullBuf = (wchar_t*)malloc(len * sizeof(wchar_t));
+            if (fullBuf) swprintf_s(fullBuf, len, L"%s\n\nSystem Error (%lu):\n%s", message, errCode, sysMsg);
+        }
+
+        // Display the error.
+        if (fullBuf)
+        {
+            MessageBoxW(NULL, fullBuf, L"Minifier 4: ERROR", MB_OK | MB_ICONERROR); // Fixed semicolon
+            free(fullBuf);
+        } 
+        else
+        {     
+            // Fallback if malloc failed or no system message existed.
+            MessageBoxW(NULL, message, L"Minifier 4: ERROR", MB_OK | MB_ICONERROR);
+        }
+    }
+
+    // Free sysMsg in both (consoleAvailable) paths.
+    if (sysMsg) 
+    {
+        LocalFree(sysMsg);
+    }
 }
 

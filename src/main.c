@@ -18,10 +18,10 @@
 
 // Helper to bind a C stream (stdout/err/in) to the Windows Console handle.
 // If the user redirected output to a file, respect that choice.
-static void internalBindStdStream(_In_ DWORD std_handle_type, _Inout_ FILE* stream, _In_ const char* mode)
+static void internalBindStdStream(_In_ DWORD stdHandleType, _Inout_ FILE* stream, _In_ const char* mode)
 {
-    HANDLE h_os = GetStdHandle(std_handle_type);
-    DWORD  type = GetFileType(h_os);
+    HANDLE hOs = GetStdHandle(stdHandleType);
+    DWORD  type = GetFileType(hOs);
 
     // If the OS handle is a generic "Character Device", re-open the C stream to
     //"CONOUT$"/"CONIN$" to make printf work (unless the type is DISK (File) or
@@ -29,7 +29,7 @@ static void internalBindStdStream(_In_ DWORD std_handle_type, _Inout_ FILE* stre
     if (type == FILE_TYPE_CHAR || type == FILE_TYPE_UNKNOWN)
     {
         FILE* dummy = nullptr;
-        const char* dev = (std_handle_type == STD_INPUT_HANDLE) ? "CONIN$" : "CONOUT$";
+        const char* dev = (stdHandleType == STD_INPUT_HANDLE) ? "CONIN$" : "CONOUT$";
         
         // Connect the CRT stream to the console
         freopen_s(&dummy, dev, mode, stream);
@@ -45,27 +45,29 @@ static bool internalSetupConsoleAttachment()
     // Attempt to attach to the parent process's console.
     if (AttachConsole(ATTACH_PARENT_PROCESS))
     {
-    // Sync the C Runtime (printf, etc.) with the Operating System Handles.
-    // (The OS knows we now have a cosole, but the CRT still doesn't)
-    // This runs regardless of whether we attached or allocated.
-    internalBindStdStream(STD_OUTPUT_HANDLE, stdout, "w");
-    internalBindStdStream(STD_ERROR_HANDLE, stderr, "w");
-    internalBindStdStream(STD_INPUT_HANDLE,  stdin,  "r");
+        // Sync the C Runtime (printf, etc.) with the Operating System Handles.
+        // (The OS knows we now have a cosole, but the CRT still doesn't)
+        // This runs regardless of whether we attached or allocated.
+        internalBindStdStream(STD_OUTPUT_HANDLE, stdout, "w");
+        internalBindStdStream(STD_ERROR_HANDLE, stderr, "w");
+        internalBindStdStream(STD_INPUT_HANDLE,  stdin,  "r");
 
-    // Set UTF-8 encoding for modern support.
-    SetConsoleOutputCP(CP_UTF8);
+        // Set UTF-8 encoding for modern support.
+        SetConsoleOutputCP(CP_UTF8);
+        return true;
     }
-    return true;
+    return false;    
 }
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
+    // Try to attach to a console. If we fail, we notify errors as popups and not through printf.
+    if (!internalSetupConsoleAttachment()) appLogErrorSetup(false);
+
     // If other instance is running, forward arguments and exit.
-    if (!mainWindowCheckForOtherInstance()) return 0;
+    if (mainWindowCheckForOtherInstance()) return 0;
 
     appLogPrint(L"Minifier 4 - Juan Manuel López Manzano 2025", APP_LOG_TO_CONSOLE);
-
-    if (!internalSetupConsoleAttachment()) appLogPrint(L"Failed to attach to console.", APP_LOG_TO_CONSOLE);
 
     // Load default minification settings.
     MiniCfg miniCfg = { };

@@ -39,7 +39,7 @@ bool mainWindowCheckForOtherInstance()
 {
     // This instance hasn't got a window yet. If FindWindowExW returns a HWND there's another instance running.
     HWND readilyRunningInstance = FindWindowExW(NULL, NULL, mainWindowClass, MAIN_WINDOW_NAME);
-    if (!readilyRunningInstance) return true;
+    if (!readilyRunningInstance) return false;
 
 
     
@@ -55,16 +55,16 @@ bool mainWindowCheckForOtherInstance()
     // Try to send WM_COPYDATA.
     for (uint8_t i = 0; i < 50 ; i++)
     {
-        if (SendMessageW(readilyRunningInstance, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&payload)) return false; // Forwarded.
+        if (SendMessageW(readilyRunningInstance, WM_COPYDATA, (WPARAM)NULL, (LPARAM)&payload)) return true; // Forwarded.
 
         // Wait between attempts.
         Sleep(5);
     }
 
-    appLogErrorPop(L"ERROR: Couldn't forward arguments to a detected readily running instance.");
+    appLogError(L"ERROR: Couldn't forward arguments to a detected readily running instance.");
 
     // Avoid spamming new instances, close this one.
-    return false;
+    return true;
 }
 
 static bool internalRegClass(_In_ HINSTANCE hInstance, _Out_ WNDCLASSEXW* pWc)
@@ -77,7 +77,7 @@ static bool internalRegClass(_In_ HINSTANCE hInstance, _Out_ WNDCLASSEXW* pWc)
     pWc->hIcon = pWc->hIconSm = LoadIconW(GetModuleHandleW(NULL), MAKEINTRESOURCEW(IDI_APP_ICON)); // App icon from resources.rc and resource.h
 
     // Register the window class
-    if (!RegisterClassExW(pWc)) { appLogErrorPop(L"Window Registration Failed!"); return 0; } 
+    if (!RegisterClassExW(pWc)) { appLogError(L"Window Registration Failed!"); return 0; } 
 
     return 1;
 }
@@ -121,7 +121,7 @@ static bool internalCreateMainWindow(_In_ HINSTANCE hInstance, _Inout_ StateGUI*
         internalScale(H_MIN_mainWindow, pStateGUI->currentDPI),
         NULL, NULL, hInstance,
         pStateGUI // The wndProc will get access to pStateGUI without making the struct or the hwnds global variables. 
-    ))) { appLogErrorPop(L"Main window creation failed!"); return 0; }
+    ))) { appLogError(L"Main window creation failed!"); return 0; }
 
     // Make title bar dark.
     BOOL useDarkMode = TRUE;
@@ -135,7 +135,7 @@ static bool internalCreateRichEditControls(_In_ HINSTANCE hInstance, _Inout_ Sta
     // Sizing logic for child controls is inside the WM_SIZE message handling.
     if (!LoadLibraryExW(L"msftedit.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32))
     { 
-        appLogErrorPop(L"Rich edit control library failed to load!");
+        appLogError(L"Rich edit control library failed to load!");
         return 0;
     }
     DWORD richEditStyle = WS_CHILD | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | WS_VISIBLE;
@@ -143,7 +143,7 @@ static bool internalCreateRichEditControls(_In_ HINSTANCE hInstance, _Inout_ Sta
     {
         if (i == richEditInput) { richEditStyle &= ~ES_READONLY; } else { richEditStyle |= ES_READONLY; }
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"RICHEDIT50W", NULL, richEditStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], NULL, hInstance, NULL)))
-        { appLogErrorPop(L"Rich edit control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Rich edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], EM_SETBKGNDCOLOR, 0, (LPARAM)RGB(23, 23, 23));
         appLogSetFormatting(pStateGUI->hwnds[i]);
     }
@@ -169,7 +169,7 @@ static bool internalCreateStaticControls(_In_ HINSTANCE hInstance, _Inout_ State
             staticStyle |= SS_BLACKFRAME; // The other half are frames with lines on the perimeter.
         }
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"STATIC", staticText[i - staticStart], staticStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { appLogErrorPop(L"Static control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Static control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)mainWindowGetFont(pStateGUI->currentDPI), TRUE);
     }
 
@@ -199,7 +199,7 @@ static bool internalCreateRadioButtonControls(_In_ HINSTANCE hInstance, _Inout_ 
             radioButtonStyle &= ~WS_GROUP;
         }
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", radioButtonText[i - radioButtonStart], radioButtonStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { appLogErrorPop(L"Radio button control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Radio button control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)mainWindowGetFont(pStateGUI->currentDPI), TRUE);        
     }
     return 1;
@@ -214,7 +214,7 @@ static bool internalCreateButtonControls(_In_ HINSTANCE hInstance, _Inout_ State
     for (uint8_t i = buttonStart; i < buttonEnd; i++)
     {
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", buttonText[i - buttonStart], WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { appLogErrorPop(L"Button control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Button control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)mainWindowGetFont(pStateGUI->currentDPI), TRUE);
     }
 
@@ -231,7 +231,7 @@ static bool internalCreateCheckboxControls(_In_ HINSTANCE hInstance, _Inout_ Sta
     for (uint8_t i = checkboxStart; i < checkboxEnd; i++)
     {
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"BUTTON", checkboxText[i - checkboxStart], checkboxStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { appLogErrorPop(L"Checkbox control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Checkbox control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)mainWindowGetFont(pStateGUI->currentDPI), TRUE);
     }
     return 1;
@@ -248,7 +248,7 @@ static bool internalCreateEditControls(_In_ HINSTANCE hInstance, _Inout_ StateGU
     {
         DWORD editControlStyle = WS_CHILD | WS_VISIBLE | ES_CENTER | ES_AUTOHSCROLL | WS_TABSTOP;
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"EDIT", L"", editControlStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], (HMENU)(uintptr_t)i, hInstance, NULL)))
-        { appLogErrorPop(L"Edit control CreateWindowW failed!"); return 0; }
+        { appLogError(L"Edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], WM_SETFONT, (WPARAM)mainWindowGetFont(pStateGUI->currentDPI), TRUE);
         Edit_SetCueBannerText(pStateGUI->hwnds[i], editControlCueBanner[i - editStart]);
     }
@@ -351,7 +351,7 @@ bool mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
     if (hUxtheme) { FreeLibrary(hUxtheme); }
 
     // Tell app_logging.c what the main window handle is.
-    appLogSetup(pStateGUI->hwnds[mainWindow]);
+    appLogPrintSetup(pStateGUI->hwnds[mainWindow]);
 
     // Flush the pending messages now that there's a valid handle for the main app in the app_logging module. Only way to get the messages up to now.
     appLogPrint(nullptr, APP_LOG_TO_CONSOLE);
@@ -795,7 +795,7 @@ bool mainWindowMsgOnlyWindowInit(_In_ HINSTANCE hInstance,_Inout_ StateGUI* pSta
     pStateGUI->hwnds[mainWindow] = CreateWindowEx( 0, mainWindowClass, MAIN_WINDOW_NAME, 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, GetModuleHandle(NULL), pStateGUI);
 
     // Tell app_logging.c what the main window handle is.
-    appLogSetup(pStateGUI->hwnds[mainWindow]);
+    appLogPrintSetup(pStateGUI->hwnds[mainWindow]);
 
     // Flush the pending messages now that there's a valid handle for the main app in the app_logging module. Only way to get the messages up to now.
     appLogPrint(nullptr, APP_LOG_TO_CONSOLE);

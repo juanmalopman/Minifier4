@@ -29,9 +29,11 @@ static constexpr UINT APP_LOG_TO_CONSOLE = MSGCUSTOM_PRINTCONSOLE;
 // FUNCTION PROTOTYPES
 //
 
-void appLogSetup(_In_ HWND hMain);
+void appLogPrintSetup(_In_ HWND hMain);
 void appLogPrint(_In_z_ const wchar_t* message, _In_ UINT whichControl);
 void appLogPrintInt(_In_ int64_t number, _In_ UINT whichControl);
 void appLogSetFormatting(_In_ HWND richEditControl);
+
+void appLogErrorSetup(_In_ bool consoleAvailableArg);
 void appLogAlertPop(_In_z_ LPCWSTR message);
-void appLogErrorPop(_In_z_ LPCWSTR message);
+void appLogError(_In_z_ LPCWSTR message);

@@ -75,7 +75,7 @@ void parserCommonRun(StateGUI* pStateGUI)
     {
         if (!pMiniCfg->inPath[0])
         {
-            appLogErrorPop(L"Headless mode requested without input file.");
+            appLogError(L"Headless mode requested without input file.");
             internalFinished(pStateGUI);
             return;
         }
@@ -234,7 +234,7 @@ void parserCommonGetMangled(int index, wchar_t* buffer, bool rand)
         {
             if ((*activepNamesSkippedCount) == _countof(prohibitedNamesJS))
             {
-                appLogErrorPop(L"ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
+                appLogError(L"ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
                 index++;
                 continue;
             }

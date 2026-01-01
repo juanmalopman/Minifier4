@@ -22,7 +22,7 @@ bool fileUtilsGetAppDataPath(PWSTR path)
 
     if (hr != S_OK)
     {
-    	appLogErrorPop(L"Error getting AppData PATH.");
+    	appLogError(L"Error getting AppData PATH.");
     	return false;
     }
 
@@ -41,7 +41,7 @@ bool fileUtilsGetAppDataPath(PWSTR path)
 
 	if (!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
 	{
-		appLogErrorPop(L"ERROR: A file named Minifier4 is in AppData\\Local. Can't create Minifier4 folder.");
+		appLogError(L"ERROR: A file named Minifier4 is in AppData\\Local. Can't create Minifier4 folder.");
 		return false;
 	}
 
@@ -69,7 +69,7 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 	// Chequea el éxito de la función anterior.
 	if (hFileToWrite == INVALID_HANDLE_VALUE)
 	{
-		appLogErrorPop(L"Error creating file with CreateFileW().");
+		appLogError(L"Error creating file with CreateFileW().");
 		return false;
 	}
 
@@ -79,14 +79,14 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 	DWORD writtenCount = 0; // Bytes effectively written.
 	if (!WriteFile( hFileToWrite, buffer, len, &writtenCount, NULL ))
 	{
-		appLogErrorPop(L"Error writing file with WriteFile().");
+		appLogError(L"Error writing file with WriteFile().");
 	}
  
-	if (!CloseHandle(hFileToWrite)) appLogErrorPop(L"Error closing file handle with CloseHandle().");
+	if (!CloseHandle(hFileToWrite)) appLogError(L"Error closing file handle with CloseHandle().");
 
 	if (writtenCount != len)
 	{
-		appLogErrorPop(L"Bytes written to the desired file were less than specified.");
+		appLogError(L"Bytes written to the desired file were less than specified.");
 		return false;
 	}
 
@@ -119,14 +119,14 @@ bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer,
 	LARGE_INTEGER fileSize = { };
 	if (!GetFileSizeEx(hFileToRead, &fileSize))
 	{
-		appLogErrorPop(L"Error getting content size in bytes using GetFileSizeEx().");
+		appLogError(L"Error getting content size in bytes using GetFileSizeEx().");
 		CloseHandle(hFileToRead);
 		return false;
 	}
 
 	if(!fileSize.QuadPart)
 	{
-		appLogErrorPop(L"Error: Content size returned from GetFileSizeEx() is 0 bytes.");
+		appLogError(L"Error: Content size returned from GetFileSizeEx() is 0 bytes.");
 		CloseHandle(hFileToRead);
 		return false;
 	}
@@ -134,14 +134,14 @@ bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer,
     // Allocate Memory.
     if (sizeof(size_t) < 8 && fileSize.HighPart != 0)
     {
-    	appLogErrorPop(L"Error: 32-bit system. Can't allocate enough memory with malloc for the file to be read.");
+    	appLogError(L"Error: 32-bit system. Can't allocate enough memory with malloc for the file to be read.");
         CloseHandle(hFileToRead);
         return false;
     } 
     void* buffer = malloc(fileSize.QuadPart);
     if (!buffer)
     {
-    	appLogErrorPop(L"Error: Couldn't allocate memory with malloc for the file to be read.");
+    	appLogError(L"Error: Couldn't allocate memory with malloc for the file to be read.");
         CloseHandle(hFileToRead);
         return false;
     }
@@ -149,7 +149,7 @@ bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer,
     DWORD bytesRead = 0;
     if (!ReadFile(hFileToRead, buffer, (DWORD)fileSize.QuadPart, &bytesRead, nullptr))
     {
-    	appLogErrorPop(L"Error: Couldn't read file with ReadFile().");
+    	appLogError(L"Error: Couldn't read file with ReadFile().");
         free(buffer);
         CloseHandle(hFileToRead);
         return false;
