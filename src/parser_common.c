@@ -6,10 +6,14 @@
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
 #include <wchar.h> // swprintf_s, wcslen, etc.
+#include <shlwapi.h> // StrTrimW
 #include "parser_common.h"
 #include "app_logging.h"
 #include "main_window.h"
 #include "minify_config.h"
+#include "html.h"
+#include "css.h"
+#include "js.h"
 
 
 //
@@ -36,47 +40,115 @@ typedef struct NameGenerator
 } NameGenerator;
 
 //
+// ENUMS
+//
+
+typedef enum fileExtension : int
+{
+    fExtInvalid,
+    fExtHTML = radioButtonHTML,
+    fExtCSS = radioButtonCSS,
+    fExtJS = radioButtonJS
+   
+} fileExtension;
+
+//
 // FUNCTIONS
 //
 
-static void internalSelectFileParser(_In_ StateGUI* pStateGUI)
+void parserCommonSpawnParsingThread(StateGUI* pStateGUI, int extension, bool mainParsingThread, wchar_t* data, int64_t len)
 {
-    // See what type of file there is on cfg if headless or the console if GUI.
-
-    // See if it matches input selection HTML vs CSS vs JS vs auto
+    // Spawn the right thread. If len == 0 , data holds a path.
+    if (extension == fExtHTML) htmlSpawnThread(pStateGUI, mainParsingThread, data, len);
+    else if (extension == fExtCSS) cssSpawnThread(pStateGUI, mainParsingThread, data, len);
+    else if (extension == fExtJS) jsSpawnThread(pStateGUI, mainParsingThread, data, len);
 }
 
-static void internalFinished(_Inout_ StateGUI* pStateGUI)
+static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
 {
-    pStateGUI->pMiniCfg->currentlyParsing = false;
+    MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
+
+    wchar_t inputPathOnly[MAX_PATH];
+    wcscpy_s(inputPathOnly, MAX_PATH, pMiniCfg->inPath);
+    PathRemoveFileSpecW(inputPathOnly); // Destructively splices inputPathOnly.
+    wchar_t* inputFilename = PathFindFileNameW(pMiniCfg->inPath); // Returns a pointer to an index of pMiniCfg->inPath.
+    wchar_t* inputExtension = PathFindExtensionW(inputFilename); // Returns a pointer to an index of pMiniCfg->inPath.
+
+    if (!inputPathOnly[0] || !inputFilename[0] || !inputExtension[0]) return false;
+
+    int extension = fExtInvalid;
+    if (!_wcsicmp(inputExtension, L".html")) extension = fExtHTML;
+    else if (!_wcsicmp(inputExtension, L".css")) extension = fExtCSS;
+    else if (!_wcsicmp(inputExtension, L".js")) extension = fExtJS;
+
+    // See if extension matches radio button selection HTML vs CSS vs JS vs auto
+    if (pMiniCfg->inputType == radioButtonAutodetect || pMiniCfg->inputType == extension)
+    {
+        parserCommonSpawnParsingThread(pStateGUI, extension, true, pMiniCfg->inPath, 0);
+        return true;
+    }
+    
+    appLogPrint(L"Input console path file extension not valid.", APP_LOG_TO_CONSOLE);
+    return false;
+}
+
+void parserCommonFinished(StateGUI* pStateGUI, wchar_t* minified)
+{
+    MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
+    pMiniCfg->currentlyParsing = false;
     mainWindowEnableControls(pStateGUI, true); // Reenable right menu controls.
     appLogPrint(L"Minification finished.", APP_LOG_TO_CONSOLE);
+
+    // If headless, terminate the app.
+    if (pMiniCfg->flagHeadless)
+    {
+        free(minified);
+        PostQuitMessage(0);
+    }
+    else
+    {
+        if (minified)
+        {
+            // Update fallback path.
+            wcscpy_s(pMiniCfg->prevPath, MAX_PATH, pMiniCfg->inPath);
+             
+            // Update output rich edit control. // TODO: You'll be working with UTF-8 most of the time. Parse in UTF-8 and convert files that are not to it. 
+            size_t size_needed = MultiByteToWideChar(CP_UTF8, 0, (char*)minified, -1, NULL, 0);
+
+            if (size_needed == 0)
+            {
+                return;
+                free(minified);
+            }
+
+            wchar_t *dest = (wchar_t *)malloc((size_needed + 1) * sizeof(wchar_t));
+
+            if (!dest)
+            {
+                return;
+                free(minified);
+            }
+
+            MultiByteToWideChar(CP_ACP, 0, (char*)minified, -1, dest, size_needed);
+
+            mainWindowReplaceRichText(pStateGUI->hwnds[richEditOutput], dest);
+            free(dest);
+            free(minified);
+        }
+    }
 }
 
 void parserCommonRun(StateGUI* pStateGUI)
 {
-    MiniCfg* pMiniCfg = pStateGUI->pMiniCfg; 
+    MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
     appLogPrint(L"Minification started.", APP_LOG_TO_CONSOLE);
-    /*
-    for (int i = 0; i < 100; i++)
-    {
-        wchar_t temp[10];
-        wchar_t buffer[10];
-        parserCommonGetMangled(i, buffer, pStateGUI->pMiniCfg->randomMangle);
-        swprintf_s(temp, 10, L"%s  ", buffer);
-        SendMessageW(pStateGUI->hwnds[richEditOutput], EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
-        SendMessageW(pStateGUI->hwnds[richEditOutput], EM_REPLACESEL, 0, (LPARAM)temp);
-        SendMessageW(pStateGUI->hwnds[richEditOutput], WM_VSCROLL, SB_BOTTOM, 0);
-    }
-    */
 
     // See if this is headless.
     if (pMiniCfg->flagHeadless)
     {
         if (!pMiniCfg->inPath[0])
         {
-            appLogError(L"Headless mode requested without input file.");
-            internalFinished(pStateGUI);
+            appLogError(L"Headless mode requested without input file. Aborting minification.");
             return;
         }
         internalSelectFileParser(pStateGUI);
@@ -84,11 +156,75 @@ void parserCommonRun(StateGUI* pStateGUI)
 
     // If this is not headless, see if there's content on top console.
     HWND hInputRichEdit = pStateGUI->hwnds[richEditInput];
-    if (hInputRichEdit && (SendMessage(hInputRichEdit, WM_GETTEXTLENGTH, 0, 0) > 0))
-    {
-        // Parse raw console content to see if it's inline code or a path.
 
-        // If a path check if it's valid.
+    // If "still" headless (but !flagHeadless).
+    if (!hInputRichEdit)
+    {
+        // Only inPath can hold a path.
+        if (pMiniCfg->inPath[0])
+        {
+            internalSelectFileParser(pStateGUI);
+        }
+        else
+        {
+            appLogError(L"No --input path specified. Aborting minification.");
+            // In this "still" headless session there can't be no prevPath yet.
+            return;
+        }
+    }
+    
+    // If there's already a GUI.
+
+    
+    LRESULT len = SendMessage(hInputRichEdit, WM_GETTEXTLENGTH, 0, 0);
+    if (len)
+    {
+        // Try to get a valid path first.
+        bool validPath = false;
+        wchar_t* richInputContent = nullptr;
+        do
+        {
+            // Allocate memory to get rich edit input contents.
+            size_t bufferSize = (len + 1) * sizeof(wchar_t);
+            richInputContent = (wchar_t*)malloc(bufferSize);
+
+            if (!richInputContent)
+            {
+                appLogError(L"Error allocating memory for input rich edit control content with malloc().");
+                break;
+            }
+
+            SendMessage(hInputRichEdit, WM_GETTEXT, (WPARAM)(len + 1), (LPARAM)richInputContent);
+
+            // Remove starting and trailing whitespaces and return characters.
+            StrTrimW(richInputContent, L" \t\r\n");
+
+            if (wcslen(richInputContent) > MAX_PATH) break; // Process richInputContent as raw console content.
+            
+            if (GetFullPathNameW(richInputContent, 0, richInputContent, NULL)) validPath = true; // See if it's malformed to be a valid path.
+
+            if (!validPath) break; // Process richInputContent as raw console content.
+
+            swprintf_s(pMiniCfg->inPath, MAX_PATH, richInputContent);
+            free(richInputContent); // No longer needed.
+            
+            // Parse the file. If successful, nothing else to do.
+            if (internalSelectFileParser(pStateGUI)) return;
+
+        } while(0);
+        
+        if (!validPath && richInputContent)
+        {
+            // Parse raw console content.
+            int extension = pMiniCfg->inputType;
+            if (extension == radioButtonAutodetect)
+            {
+                appLogPrint(L"Auto-detect option works for file paths only. Defaulting to HTML.", APP_LOG_TO_CONSOLE);
+                extension = radioButtonHTML;
+            }
+            parserCommonSpawnParsingThread(pStateGUI, extension, true, richInputContent, len); // Spawned thread frees the memory when (len == true).
+            return; // No fallback for raw processing.
+        }        
     }
     else
     {
@@ -99,9 +235,12 @@ void parserCommonRun(StateGUI* pStateGUI)
     if(pMiniCfg->fallbackToPrevFile && pMiniCfg->prevPath[0])
     {
         appLogPrint(L"Attempting fallback.", APP_LOG_TO_CONSOLE);
+        swprintf_s(pMiniCfg->inPath, MAX_PATH, pMiniCfg->prevPath);
+        if (internalSelectFileParser(pStateGUI)) return;
     }
-
-    internalFinished(pStateGUI);
+    
+    // If fallback is not configured, or was tried and failed, return disabled controls to normal.
+    parserCommonFinished(pStateGUI, 0);
 }
 
 // Initialize the generator by shuffling the alphabets and storing them in a static NameGenerator stuct.

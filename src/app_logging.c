@@ -172,16 +172,16 @@ void appLogPrintInt(int64_t number, UINT whichControl)
 	appLogPrint((const wchar_t*)integerMaxBuffer, whichControl);
 }
 
-void appLogSetFormatting(HWND richEditControl)
+void appLogSetFormatting(HWND hRichEditControl)
 {
 	CHARFORMATW monospaceCustomFont = { };
 	monospaceCustomFont.cbSize = sizeof(CHARFORMATW);
 	monospaceCustomFont.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
 	monospaceCustomFont.yHeight = 200;
-	monospaceCustomFont.crTextColor = RGB(248, 248, 242);
+	monospaceCustomFont.crTextColor = MAIN_WINDOW_WHITE_TXT;
 	const wchar_t *szFaceName = L"Consolas";
 	wcscpy_s(monospaceCustomFont.szFaceName, _countof(monospaceCustomFont.szFaceName), szFaceName);
-    SendMessageW(richEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
+    SendMessageW(hRichEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
 }
 
 

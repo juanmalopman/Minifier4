@@ -20,19 +20,23 @@
 // FUNCTIONS
 //
 
-static void internalAppendToRichEditOrSendToConsole(StateGUI* pStateGUI,_In_ HWND hWnd,_In_  LPARAM lParam)
+static void internalAppendToRichEditOrSendToConsole(_In_ HWND hWnd, _In_  LPARAM lParam)
 {
-    if (pStateGUI->pMiniCfg->flagHeadless)
+    if (!hWnd)
     {
         wprintf (L"%s\n", (wchar_t*)lParam);
     }
     else
     {
+        // Ensure there's text in the rich edit control so that any future EM_REPLACESEL has the right font.
         SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+        appLogSetFormatting(hWnd);
         SendMessageW(hWnd, EM_REPLACESEL, 0, lParam);
         SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
         SendMessageW(hWnd, EM_REPLACESEL, 0, (LPARAM)L"\n");
         SendMessageW(hWnd, WM_VSCROLL, SB_BOTTOM, 0);
+
+
     }
     free((wchar_t*)lParam); // Free heap.
 }
@@ -67,12 +71,12 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
     {
     case MSGCUSTOM_PRINTINPUT: // ---------------------------------------------------------------------- MSGCUSTOM_PRINTINPUT
     {
-        internalAppendToRichEditOrSendToConsole(pStateGUI,pStateGUI->hwnds[richEditInput], lParam);
+        internalAppendToRichEditOrSendToConsole( pStateGUI->hwnds[richEditInput], lParam);
         return 0;
     }
     case MSGCUSTOM_PRINTOUTPUT: // --------------------------------------------------------------------- MSGCUSTOM_PRINTOUTPUT
     {
-        internalAppendToRichEditOrSendToConsole(pStateGUI,pStateGUI->hwnds[richEditOutput], lParam);
+        internalAppendToRichEditOrSendToConsole( pStateGUI->hwnds[richEditOutput], lParam);
         return 0;
     }
     case MSGCUSTOM_PRINTCONSOLE: // -------------------------------------------------------------------- MSGCUSTOM_PRINTCONSOLE
@@ -96,7 +100,7 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         swprintf_s(tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, L"%05d", lineNumberToPrint);
         wmemcpy_s(pMessage, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT);
 
-        internalAppendToRichEditOrSendToConsole(pStateGUI,pStateGUI->hwnds[richEditConsole], lParam);
+        internalAppendToRichEditOrSendToConsole( pStateGUI->hwnds[richEditConsole], lParam);
         return 0;
     }
     case WM_COPYDATA: // ------------------------------------------------------------------------------- WM_COPYDATA

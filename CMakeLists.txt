@@ -15,7 +15,7 @@ project(Minifier4
 # --- Source Discovery ---
 file(GLOB_RECURSE SRC_FILES "src/*.c")
 file(GLOB_RECURSE INC_FILES "include/*.h")
-file(GLOB_RECURSE RC_FILES "rc/*.rc")
+file(GLOB_RECURSE RC_FILES "res/*.rc")
 
 # --- Options ---
 option(BUILD_HEADERS_ONLY "Check syntax of headers only" OFF)

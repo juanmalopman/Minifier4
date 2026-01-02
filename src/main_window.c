@@ -8,7 +8,7 @@
 #include <wchar.h> // swprintf_s, wcslen, etc.
 #include <dwmapi.h> // For dark mode title bars. (Library added to CMakeLists.txt).
 #include <uxtheme.h> // Dark mode scroll bars and buttons. (Library added to CMakeLists.txt).
-#include <richedit.h> // For the rich edit control used as a console.
+#include <richedit.h> // For the rich edit controls.
 #include <shellscalingapi.h> // Allows getting monitor DPI to scale the GUI. ("shcore.lib" library added to CMakeLists.txt).
 #include "main_window.h"
 #include "resource.h"
@@ -145,7 +145,7 @@ static bool internalCreateRichEditControls(_In_ HINSTANCE hInstance, _Inout_ Sta
         if (!(pStateGUI->hwnds[i] = CreateWindowW(L"RICHEDIT50W", NULL, richEditStyle, 0, 0, 0, 0, pStateGUI->hwnds[mainWindow], NULL, hInstance, NULL)))
         { appLogError(L"Rich edit control CreateWindowW failed!"); return 0; }
         SendMessageW(pStateGUI->hwnds[i], EM_SETBKGNDCOLOR, 0, (LPARAM)RGB(23, 23, 23));
-        appLogSetFormatting(pStateGUI->hwnds[i]);
+        // Text color gets set when written.
     }
 
     return 1;
@@ -359,6 +359,8 @@ bool mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
     appLogPrint(L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
             "<meta name='viewport' content='width=device-width, initial-scale=1'>\r\n     <title>"
             "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>", APP_LOG_TO_INPUT);
+
+    appLogPrint(L"(Output)", APP_LOG_TO_OUTPUT);
 
     return true;
 }
@@ -712,6 +714,19 @@ LRESULT mainWindowSizing(StateGUI* pStateGUI, LPARAM lParam)
     return 0;
 }
 
+// Replace entire specified rich edit control contents.
+void mainWindowReplaceRichText( HWND hWnd, wchar_t* message)
+{
+    if (hWnd)
+    {
+        // Replace whole content.
+        CHARRANGE cr = { 0, -1 };
+        SendMessageW(hWnd, EM_EXSETSEL, 0, (LPARAM)&cr);
+        appLogSetFormatting(hWnd);
+        SendMessageW(hWnd, EM_REPLACESEL, TRUE, (LPARAM)message);
+    }
+}
+
 // Make the correct checkboxes/radio buttons selected and fill in edit controls.
 void mainWindowUpdateControls(StateGUI* pStateGUI)
 {
@@ -737,11 +752,7 @@ void mainWindowUpdateControls(StateGUI* pStateGUI)
 
     // Update input rich edit control.
     if (!pStateGUI->pMiniCfg->inPath[0]) return;
-    wchar_t inputFile[MAX_PATH];
-    swprintf_s(inputFile, MAX_PATH, L"File: %s", pStateGUI->pMiniCfg->inPath);
-    CHARRANGE cr = { 0, -1 };
-    SendMessageW(pStateGUI->hwnds[richEditInput], EM_EXSETSEL, 0, (LPARAM)&cr);
-    SendMessageW(pStateGUI->hwnds[richEditInput], EM_REPLACESEL, TRUE, (LPARAM)inputFile);
+    mainWindowReplaceRichText( pStateGUI->hwnds[richEditInput], pStateGUI->pMiniCfg->inPath);
 }
 
 void mainWindowEnableControls(StateGUI* pStateGUI, bool enable)
