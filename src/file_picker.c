@@ -96,8 +96,6 @@ static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_
     if (pItem != NULL) IShellItem_Release(pItem);
 
     if (pFileOpen != NULL) IFileOpenDialog_Release(pFileOpen);
-
-    CoUninitialize();
 }
 
 void filePickerInPath(StateGUI* pStateGUI)

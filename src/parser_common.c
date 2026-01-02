@@ -11,6 +11,7 @@
 #include "app_logging.h"
 #include "main_window.h"
 #include "minify_config.h"
+#include "file_utils.h"
 #include "html.h"
 #include "css.h"
 #include "js.h"
@@ -56,12 +57,196 @@ typedef enum fileExtension : int
 // FUNCTIONS
 //
 
-void parserCommonSpawnParsingThread(StateGUI* pStateGUI, int extension, bool mainParsingThread, wchar_t* data, int64_t len)
+static char* internalConvertToUTF8(_Inout_ void* rawData, _Inout_ size_t* pLen, _In_ UINT codePage)
 {
-    // Spawn the right thread. If len == 0 , data holds a path.
-    if (extension == fExtHTML) htmlSpawnThread(pStateGUI, mainParsingThread, data, len);
-    else if (extension == fExtCSS) cssSpawnThread(pStateGUI, mainParsingThread, data, len);
-    else if (extension == fExtJS) jsSpawnThread(pStateGUI, mainParsingThread, data, len);
+    if (!rawData || !pLen) return nullptr;
+
+    // If already UTF-8, check if we have to skip the BOM (Byte Order Mark).
+    if (codePage == CP_UTF8)
+    {
+        unsigned char* bytes = (unsigned char*)rawData;
+        // Check for UTF-8 BOM (0xEF, 0xBB, 0xBF).
+        if (*pLen >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+        {
+            // Fast in-place shift. 
+            // We overwrite the BOM by moving the rest of the data 3 bytes to the left.
+            size_t newLen = *pLen - 3;
+            memmove(bytes, bytes + 3, newLen);
+            // Null-terminate the string on the new bytes at the end (that newLen doesn't count).
+            bytes[newLen] = 0;
+            *pLen = newLen;
+        }
+
+        return (char*)rawData;
+    }
+
+    // WinAPI Limitation: The file must not be larger than 2GB (INT_MAX) for MultiByteToWideChar.
+    if (*pLen > (size_t)INT_MAX)
+    {
+        appLogError(L"Error: Input file too large (> 2GB) for encoding conversion.");
+        free(rawData);
+        return nullptr;
+    }
+
+    // Handle UTF-16BE by swapping in-place. Then treat it as standard Windows UTF-16LE.
+    if (codePage == CP_UTF16BE)
+    {
+        uint16_t* ptr = (uint16_t*)rawData;
+        size_t sizeInBytes = *pLen;
+        size_t count = sizeInBytes / sizeof(uint16_t);
+        
+        for (size_t i = 0; i < count; i++)
+        {
+            // Swap logic (Big Endian <-> Little Endian) for UTF-16 BE files.
+            uint16_t x = ptr[i];
+            ptr[i] = (x << 8) | (x >> 8);
+        }
+        codePage = CP_UTF16LE; 
+    }
+
+    char* utf8Data = nullptr;
+    size_t utf8Len = 0;
+
+    // PATH A: Source is UTF-16LE (Native Windows Wide Char).
+    if (codePage == CP_UTF16LE)
+    {
+        wchar_t* wideBuf = (wchar_t*)rawData;
+        int wideLen = (int)(*pLen / sizeof(wchar_t));
+
+        // Detect and skip BOM (Byte Order Mark).
+        if (wideLen > 0 && wideBuf[0] == 0xFEFF)
+        {
+            wideBuf++;  // Advance pointer past the BOM
+            wideLen--;  // Decrease the length to process
+        }
+
+        // Get required buffer size.
+        utf8Len = WideCharToMultiByte(CP_UTF8, 0, wideBuf, wideLen, NULL, 0, NULL, NULL);
+        
+        if (utf8Len)
+        {
+            utf8Data = (char*)malloc(utf8Len + 1);
+            if (utf8Data)
+            {
+                WideCharToMultiByte(CP_UTF8, 0, wideBuf, wideLen, utf8Data, utf8Len, NULL, NULL);
+                utf8Data[utf8Len] = 0; // Null terminate
+            }
+        }
+    }
+    // PATH B: Source is ANSI / MultiByte (CP_ACP, Shift-JIS, etc.).
+    else 
+    {
+        // 1. ANSI -> UTF-16
+        int wideLen = MultiByteToWideChar(codePage, 0, (char*)rawData, (int)*pLen, NULL, 0);
+        
+        if (wideLen > 0)
+        {
+            wchar_t* tempWide = (wchar_t*)malloc((wideLen + 1) * sizeof(wchar_t));
+            
+            if (tempWide)
+            {
+                MultiByteToWideChar(codePage, 0, (char*)rawData, (int)*pLen, tempWide, wideLen);
+                tempWide[wideLen] = 0;
+
+                // 2. UTF-16 -> UTF-8
+                utf8Len = WideCharToMultiByte(CP_UTF8, 0, tempWide, wideLen, NULL, 0, NULL, NULL);
+                
+                if (utf8Len > 0)
+                {
+                    utf8Data = (char*)malloc((size_t)utf8Len + 1);
+                    if (utf8Data)
+                    {
+                        WideCharToMultiByte(CP_UTF8, 0, tempWide, wideLen, utf8Data, utf8Len, NULL, NULL);
+                        utf8Data[utf8Len] = 0;
+                    }
+                }
+                free(tempWide);
+            }
+        }
+    }
+
+    // Always free the original buffer, as we either failed or created a new UTF-8 one. (Unless CP_UTF8, which was returned early at the top).
+    free(rawData);
+
+    if (!utf8Data)
+    {
+        appLogError(L"Error: Encoding conversion failed.");
+        return nullptr;
+    }
+
+    *pLen = (size_t)utf8Len;
+    return utf8Data;
+}
+
+char* parserCommonGetPointerToUTF8(wchar_t* data, size_t* pLen)
+{
+    // TODO: Document clearly that the programmer must pass "data" to "free()" and pLen == 0; or the opposite.
+    // data pointing to the stack and pLen != 0 will crash the app.
+
+    if (!pLen) return nullptr;
+
+    void* rawBuffer = nullptr;
+    UINT codePage = CP_UTF16LE; // Default assumption for forwarded data (Windows L"internal string").
+
+    // Scenario 1: "data" is a file path in the stack (pLen is 0). We must read it.
+    if (*pLen == 0)
+    {
+        if (!fileUtilsReadFromFile(data, &codePage, &rawBuffer, pLen))
+        {
+            appLogPrint(L"Couldn't open specified input file.", APP_LOG_TO_CONSOLE);
+            return nullptr;
+        }
+    }
+    // Scenario 2: "data" is the actual content (forwarded from the UI).
+    else
+    {
+        rawBuffer = (void*)data;
+    }
+
+    // Convert (or pass through) to UTF-8
+    // internalConvertToUTF8 takes ownership of rawBuffer.
+    return internalConvertToUTF8(rawBuffer, pLen, codePage);
+}
+
+void parserCommonSpawnParsingThread(StateGUI* pStateGUI, int extension, bool mainParsingThread, wchar_t* data, size_t len)
+{
+    // Determine based on extension what function we need.
+    typedef DWORD WINAPI (*WorkerSpawnThread)(LPVOID lpParam);
+    WorkerSpawnThread selectedFunc = nullptr;
+
+    if (extension == fExtHTML)      selectedFunc = htmlSpawnThread;
+    else if (extension == fExtCSS)  selectedFunc = cssSpawnThread;
+    else if (extension == fExtJS)   selectedFunc = jsSpawnThread;
+
+    // Allocate memory for the argument on the heap.
+    ParsingThreadArgs* args = (ParsingThreadArgs*)malloc(sizeof(ParsingThreadArgs));
+    
+    if (args)
+    {
+        args->pStateGUI = pStateGUI;
+        args->mainParsingThread = mainParsingThread;
+        args->data = data;
+        args->len = len;
+
+        HANDLE hThread = CreateThread(
+            NULL,               // Default security attributes.
+            0,                  // Default stack size.
+            selectedFunc,       // The thread to spwan.
+            args,               // The argument struct.
+            0,                  // Default creation flags.
+            NULL                // Don't need the thread ID.
+        );
+
+        if (hThread) {
+            CloseHandle(hThread); // We don't need to keep the handle open
+        } else {
+            free(args); // Thread creation failed, clean up.
+        }
+    }
+    else
+    {
+        appLogError(L"Couldn't allocate memory for the \"ParsingThreadArgs\" struct with malloc() to spawn a thread.");
+    }
 }
 
 static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
@@ -92,7 +277,7 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
     return false;
 }
 
-void parserCommonFinished(StateGUI* pStateGUI, wchar_t* minified)
+void parserCommonFinished(StateGUI* pStateGUI, char* minified)
 {
     MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
     pMiniCfg->currentlyParsing = false;
@@ -102,7 +287,8 @@ void parserCommonFinished(StateGUI* pStateGUI, wchar_t* minified)
     // If headless, terminate the app.
     if (pMiniCfg->flagHeadless)
     {
-        free(minified);
+        // TODO: Save output file.
+        if (minified) free(minified);
         PostQuitMessage(0);
     }
     else
@@ -112,27 +298,7 @@ void parserCommonFinished(StateGUI* pStateGUI, wchar_t* minified)
             // Update fallback path.
             wcscpy_s(pMiniCfg->prevPath, MAX_PATH, pMiniCfg->inPath);
              
-            // Update output rich edit control. // TODO: You'll be working with UTF-8 most of the time. Parse in UTF-8 and convert files that are not to it. 
-            size_t size_needed = MultiByteToWideChar(CP_UTF8, 0, (char*)minified, -1, NULL, 0);
-
-            if (size_needed == 0)
-            {
-                return;
-                free(minified);
-            }
-
-            wchar_t *dest = (wchar_t *)malloc((size_needed + 1) * sizeof(wchar_t));
-
-            if (!dest)
-            {
-                return;
-                free(minified);
-            }
-
-            MultiByteToWideChar(CP_ACP, 0, (char*)minified, -1, dest, size_needed);
-
-            mainWindowReplaceRichText(pStateGUI->hwnds[richEditOutput], dest);
-            free(dest);
+            mainWindowReplaceRichTextA(pStateGUI->hwnds[richEditOutput], minified);
             free(minified);
         }
     }
@@ -176,7 +342,7 @@ void parserCommonRun(StateGUI* pStateGUI)
     // If there's already a GUI.
 
     
-    LRESULT len = SendMessage(hInputRichEdit, WM_GETTEXTLENGTH, 0, 0);
+    size_t len = SendMessage(hInputRichEdit, WM_GETTEXTLENGTH, 0, 0);
     if (len)
     {
         // Try to get a valid path first.
@@ -205,7 +371,7 @@ void parserCommonRun(StateGUI* pStateGUI)
 
             if (!validPath) break; // Process richInputContent as raw console content.
 
-            swprintf_s(pMiniCfg->inPath, MAX_PATH, richInputContent);
+            wcscpy_s(pMiniCfg->inPath, MAX_PATH, richInputContent);
             free(richInputContent); // No longer needed.
             
             // Parse the file. If successful, nothing else to do.

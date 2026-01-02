@@ -714,8 +714,21 @@ LRESULT mainWindowSizing(StateGUI* pStateGUI, LPARAM lParam)
     return 0;
 }
 
-// Replace entire specified rich edit control contents.
-void mainWindowReplaceRichText( HWND hWnd, wchar_t* message)
+// Replace entire specified rich edit control contents. ANSI (UTF-8 thanks to  the manifest starting in updated Win10) version.
+void mainWindowReplaceRichTextA( HWND hWnd, char* message)
+{
+    if (hWnd)
+    {
+        // Replace whole content.
+        CHARRANGE cr = { 0, -1 };
+        SendMessageA(hWnd, EM_EXSETSEL, 0, (LPARAM)&cr);
+        appLogSetFormatting(hWnd);
+        SendMessageA(hWnd, EM_REPLACESEL, TRUE, (LPARAM)message);
+    }
+}
+
+// Replace entire specified rich edit control contents. Windows Unicode UTF-16LE version.
+void mainWindowReplaceRichTextW( HWND hWnd, wchar_t* message)
 {
     if (hWnd)
     {
@@ -752,7 +765,7 @@ void mainWindowUpdateControls(StateGUI* pStateGUI)
 
     // Update input rich edit control.
     if (!pStateGUI->pMiniCfg->inPath[0]) return;
-    mainWindowReplaceRichText( pStateGUI->hwnds[richEditInput], pStateGUI->pMiniCfg->inPath);
+    mainWindowReplaceRichTextW( pStateGUI->hwnds[richEditInput], pStateGUI->pMiniCfg->inPath);
 }
 
 void mainWindowEnableControls(StateGUI* pStateGUI, bool enable)

@@ -9,6 +9,7 @@
 #include <vsstyle.h> // Required for BP_CHECKBOX (Redrawing radio buttons).
 #include <vssym32.h> // Required for CBS_UNCHECKEDNORMAL (Redrawing radio buttons).
 #include <commctrl.h> // Allows some UI controls to be subclassed and some messages handled to change their graphics. (Library added to CMakeLists.txt).
+#include <shobjidl.h> // Required for pick folder/file dialogs and calling CoUninitialize(); here.
 #include "window_messages.h"
 #include "main_window.h"
 #include "app_logging.h"
@@ -244,6 +245,9 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
     {
         // Delete HFONT.
         DeleteObject(mainWindowGetFont(pStateGUI->currentDPI));
+
+        // Uninitialize the COM library.
+        CoUninitialize();
 
         PostQuitMessage(0);
         return 0;

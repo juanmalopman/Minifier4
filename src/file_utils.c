@@ -49,11 +49,9 @@ bool fileUtilsGetAppDataPath(PWSTR path)
     return  true;
 }
 
-bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWORD len)
+bool fileUtilsSaveToFile(LPCWSTR fullPath, LPCVOID buffer, DWORD len)
 {
-	wchar_t fullPath[MAX_PATH] = { };
-
-	PathCombineW(fullPath, filePath, filename);
+	// TODO: Create all intermediate directories if they don't exist whenever saving a file.
 
 	HANDLE hFileToWrite = NULL;
 	hFileToWrite = CreateFileW(
@@ -62,7 +60,9 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 		FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, // Share with any other app concurrently.
 		NULL, // SECURITY_ATTRIBUTES pointer.
 		CREATE_ALWAYS, // Recreate the file as a whole instead of modifying it.
-		FILE_FLAG_WRITE_THROUGH, // Set readonly, hidden etc properties. // TODO: Try using FILE_FLAG_NO_BUFFERING to speed hdd access.
+		FILE_FLAG_WRITE_THROUGH, 	// Write directly to the disk, bypassing the lazy-write cache. Takes the same time but is a synchoronous write.
+									// TODO: See if you want this synchronous write or not. Useful for uploading files after parsing, but not yet implemented.
+									// TODO: Try using FILE_FLAG_NO_BUFFERING to speed hdd access.
 		NULL // Extended file attributes
 	);
 
@@ -93,11 +93,85 @@ bool fileUtilsSaveToFile(LPCWSTR filePath, LPCWSTR filename, LPCVOID buffer, DWO
 	return true;
 }
 
-bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer, size_t* outLen)
+// Helper to check  Byte Order Mark (BOM) at the start of files in search for the code page.
+void internalDetectCodePage(_In_ void* buffer, _In_ size_t length, _Out_ UINT* outCodePage)
 {
-	wchar_t fullPath[MAX_PATH] = { };
+    const uint8_t* bytes = (const uint8_t*)buffer;
 
-	PathCombineW(fullPath, filePath, filename);
+    // 1. Definitive BOM Checks
+    if (length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF) {
+        *outCodePage = CP_UTF8; return;
+    }
+    if (length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE) {
+        *outCodePage = CP_UTF16LE; return; // Standard Windows Unicode
+    }
+    if (length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF) {
+        *outCodePage = CP_UTF16BE; return;
+    }
+
+    // 2. Prepare Heuristic Chunk.
+    static constexpr int DETECT_CHUNK_SIZE = 1024;
+    int testLen = (int)((length > DETECT_CHUNK_SIZE) ? DETECT_CHUNK_SIZE : length);
+
+    // Safety adjustment (avoid cutting UTF-8 multi-byte sequences).
+    if (length > DETECT_CHUNK_SIZE)
+    {
+        while (testLen > 0) {
+            uint8_t b = bytes[testLen - 1];
+            if ((b & 0x80) == 0) break;       // ASCII
+            if ((b & 0xC0) == 0xC0) { testLen--; break; } // Lead byte
+            testLen--; // Continuation byte.
+        }
+    }
+
+    if (testLen <= 0) { *outCodePage = CP_ACP; return; }
+
+    // 3. UTF-16 LE Heuristic.
+    int utf16TestLen = (testLen % 2 == 0) ? testLen : testLen - 1;
+    int tests = IS_TEXT_UNICODE_STATISTICS | IS_TEXT_UNICODE_CONTROLS;
+    
+    if (utf16TestLen > 0 && IsTextUnicode(buffer, utf16TestLen, &tests))
+    {
+        *outCodePage = CP_UTF16LE;
+        return;
+    }
+
+    // 4. UTF-8 Strict Heuristic with Null Check.
+    int res = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (LPCSTR)buffer, testLen, NULL, 0);
+    
+    if (res > 0)
+    {
+        // It passed the structure test, but it might be UTF-16LE masquerading as UTF-8 with Nulls.
+        // Web source files (HTML/JS/CSS) should not contain binary NULLs.
+        bool containsNull = false;
+        for (int i = 0; i < testLen; i++)
+        {
+            if (bytes[i] == 0)
+            {
+                containsNull = true;
+                break;
+            }
+        }
+
+        if (containsNull)
+        {
+            // Valid UTF-8 structure BUT contains NULLs -> Almost certainly UTF-16LE without BOM.
+            *outCodePage = CP_UTF16LE;
+        }
+        else
+        {
+            *outCodePage = CP_UTF8;
+        }
+    }
+    else
+    {
+        // 5. Fallback
+        *outCodePage = CP_ACP;
+    }
+}
+
+bool fileUtilsReadFromFile(LPCWSTR fullPath, UINT* codePage, void** outBuffer, size_t* outLen)
+{
 
 	HANDLE hFileToRead = nullptr;
 	hFileToRead = CreateFileW(
@@ -156,6 +230,11 @@ bool fileUtilsReadFromFile(LPCWSTR filePath, LPCWSTR filename, void** outBuffer,
     }
 
     CloseHandle(hFileToRead);
+
+    if (codePage != nullptr)
+    {
+        internalDetectCodePage(buffer, (size_t)bytesRead, codePage);
+    }
 
     *outBuffer = buffer;
     *outLen = (size_t)bytesRead;

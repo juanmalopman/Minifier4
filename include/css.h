@@ -13,4 +13,4 @@
 // FUNCTION PROTOTYPES
 //
 
-void cssSpawnThread(_In_ StateGUI* pStateGUI, _In_ bool mainParsingThread, _In_ wchar_t* data, _In_ int64_t len);
+DWORD WINAPI cssSpawnThread(_Inout_ LPVOID lpParam);

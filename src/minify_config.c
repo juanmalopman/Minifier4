@@ -142,7 +142,9 @@ void miniCfgSave(MiniCfg* pMiniCfg)
     wchar_t path[MAX_PATH] = { };
     if (fileUtilsGetAppDataPath(path))
     {
-        if (fileUtilsSaveToFile(path, CONFIG_FILENAME, (LPCVOID)pMiniCfg, sizeof(MiniCfg)))
+        wchar_t fullPath[MAX_PATH];
+        PathCombineW(fullPath, path, CONFIG_FILENAME);
+        if (fileUtilsSaveToFile(fullPath, (LPCVOID)pMiniCfg, sizeof(MiniCfg)))
         {
             appLogPrint(L"Settings saved.", APP_LOG_TO_CONSOLE);
             return;
@@ -211,7 +213,9 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
     {
         void* buffer = nullptr;
         size_t len = 0;
-        if (fileUtilsReadFromFile(path, CONFIG_FILENAME, &buffer, &len))
+        wchar_t fullPath[MAX_PATH];
+        PathCombineW(fullPath, path, CONFIG_FILENAME);
+        if (fileUtilsReadFromFile(fullPath, nullptr, &buffer, &len))
         {
             if (buffer && len == sizeof(MiniCfg))
             {
