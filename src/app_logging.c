@@ -38,7 +38,7 @@ void appLogAlertPop(LPCWSTR message)
     MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
 }
 
-static volatile HWND mainWindowHWND = nullptr;
+static HWND mainWindowHWND = nullptr;
 void appLogPrintSetup(HWND hMain)
 {
     mainWindowHWND = hMain;
