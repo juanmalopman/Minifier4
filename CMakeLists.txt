@@ -143,7 +143,7 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         )
     else()
         # Headers need no linking.
-        target_link_options(${PROJECT_NAME} PRIVATE -municode) 
+        target_link_options(${PROJECT_NAME} PRIVATE -static -static-libgcc -municode) 
     endif() 
 endif()
 
@@ -153,3 +153,38 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/bin/Release"
 )
+
+# --- Testing ---
+if(NOT BUILD_HEADERS_ONLY)
+    enable_testing()
+    
+    set(TEST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    set(TEST_SCRIPT "${TEST_ROOT}/test_runner.cmake")
+    
+    # Ensure temp directory exists so Minifier has a valid target -op
+    file(MAKE_DIRECTORY "${TEST_ROOT}/integration/temp")
+
+    # Find test cases
+    file(GLOB TEST_CASES "${TEST_ROOT}/integration/cases/*")
+
+    foreach(CASE_FILE ${TEST_CASES})
+        get_filename_component(CASE_NAME "${CASE_FILE}" NAME)
+        
+        set(EXPECTED_FILE "${TEST_ROOT}/integration/expected/${CASE_NAME}")
+        set(TEMP_DIR      "${TEST_ROOT}/integration/temp")
+        
+        if(EXISTS "${EXPECTED_FILE}")
+            add_test(NAME "Integration.${CASE_NAME}"
+                COMMAND ${CMAKE_COMMAND}
+                -DEXE=$<TARGET_FILE:${PROJECT_NAME}>
+                -DIN=${CASE_FILE}
+                -DOUT_DIR=${TEMP_DIR}
+                -DOUT_NAME=${CASE_NAME}  # Used by script to find the file, not passed to CLI
+                -DEXP=${EXPECTED_FILE}
+                -P "${TEST_SCRIPT}"
+            )
+        else()
+            message(WARNING "Skipping test case: ${CASE_NAME} (Missing 'expected' file)")
+        endif()
+    endforeach()
+endif()

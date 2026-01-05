@@ -70,6 +70,11 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
 
     switch (uMsg)
     {
+    case MSGCUSTOM_RUN_MINIFICATION: // ---------------------------------------------------------------- MSGCUSTOM_RUN_MINIFICATION
+    {
+        parserCommonRun(pStateGUI);
+        return 0;
+    }
     case MSGCUSTOM_PRINTINPUT: // ---------------------------------------------------------------------- MSGCUSTOM_PRINTINPUT
     {
         internalAppendToRichEditOrSendToConsole( pStateGUI->hwnds[richEditInput], lParam);

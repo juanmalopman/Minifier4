@@ -10,6 +10,7 @@
 #include "main_window.h"
 #include "minify_config.h"
 #include "app_logging.h"
+#include "parser_common.h"
 
 
 //
@@ -74,13 +75,23 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANC
     StateGUI stateGUI = { };
     miniCfgLoad(&miniCfg, &stateGUI);
 
-    // If the --headless flag is set, create a message only window, do the conversion and exit.
+
+    // Check CLI arguments. 
+    // miniCfgParseCLI returns FALSE if:
+    // 1. --help was printed (we should exit).
+    // 2. --close was requested (we should exit).
+    // 3. --headless was requested (we should RUN the message loop, NOT exit).
     if (!miniCfgParseCLI(&miniCfg, nullptr, nullptr))
     {
-        if (!mainWindowMsgOnlyWindowInit(hInstance, &stateGUI)){ return 1; }
-        // PostMessageW(stateGUI.hwnds[mainWindow], CUSTOM_RUNANDQUIT)...
-        // parserCommonRun(&stateGUI);
-        // return 0;
+        if (miniCfg.flagHeadless)
+        {
+            if (!mainWindowMsgOnlyWindowInit(hInstance, &stateGUI)){ return 1; }
+            PostMessageW(stateGUI.hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
+        }
+        else
+        {
+            return 0;
+        }
     }
     else
     {

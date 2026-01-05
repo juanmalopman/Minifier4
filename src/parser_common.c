@@ -417,7 +417,7 @@ void parserCommonFinished(StateGUI* pStateGUI, char* minified, size_t len)
             internalSaveAsFile(pMiniCfg, minified, len);
             free(minified);
         }
-        PostQuitMessage(0);
+        PostMessageW(pStateGUI->hwnds[mainWindow], WM_CLOSE, 0, 0); 
     }
     else
     {
@@ -451,6 +451,7 @@ void parserCommonRun(StateGUI* pStateGUI)
             return;
         }
         internalSelectFileParser(pStateGUI);
+        return;
     }
 
     // If this is not headless, see if there's content on top console.

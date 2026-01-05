@@ -1,6 +1,9 @@
 @echo off
 setlocal
 
+:: --- 0: Save Script Location (Critical: Do this before 'shift') ---
+set "SCRIPT_ROOT=%~dp0"
+
 :: --- 1: Defaults ---
 set "BUILD_TYPE=Debug"
 set "COMPILER_MODE=MSVC"
@@ -22,6 +25,9 @@ if /I "%~1"=="debug"   set "BUILD_TYPE=Debug" & shift & goto :PARSE_ARGS
 
 :: Check for Headers Only flag
 if /I "%~1"=="--headers" set "CMAKE_EXTRA_ARGS=-DBUILD_HEADERS_ONLY=ON" & shift & goto :PARSE_ARGS
+
+:: Check for Test flag
+if /I "%~1"=="/test" set "RUN_TESTS=ON" & shift & goto :PARSE_ARGS
 
 shift
 goto :PARSE_ARGS
@@ -103,5 +109,43 @@ echo [2/2] Compiling...
 "%CMAKE_EXE%" --build --preset %TARGET_PRESET%
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+:: --- Step 4: Test ---
+if "%RUN_TESTS%"=="ON" goto :RUN_TESTS
+goto :SUCCESS
+
+:RUN_TESTS
+echo.
+echo [Test] Running Integration Tests...
+
+:: 1. Anchor to script root using the variable saved BEFORE parsing
+pushd "%SCRIPT_ROOT%"
+
+:: 2. Check build folder
+if not exist "build\%CONFIG_PRESET%" (
+    echo [Error] Build directory not found: "%SCRIPT_ROOT%build\%CONFIG_PRESET%"
+    popd
+    exit /b 1
+)
+
+:: 3. Enter build folder (Required for CTest to find CTestTestfile.cmake)
+cd "build\%CONFIG_PRESET%"
+
+:: 4. Find CTest (Next to CMake if bundled)
+set "CTEST_EXE=ctest"
+if not "%CMAKE_EXE%"=="cmake.exe" (
+    for %%F in ("%CMAKE_EXE%") do set "CTEST_EXE=%%~dpFctest.exe"
+)
+
+:: 5. Run Tests
+"%CTEST_EXE%" -C %BUILD_TYPE% --output-on-failure
+set "TEST_ERROR=%errorlevel%"
+
+popd
+if %TEST_ERROR% neq 0 (
+    echo [Error] Tests Failed.
+    exit /b %TEST_ERROR%
+)
+
+:SUCCESS
 echo.
 echo [Success]

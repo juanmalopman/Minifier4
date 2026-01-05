@@ -30,7 +30,7 @@ v4.0 is a clean rewrite targeting **strict C23 compliance**. It standardizes on 
 
 ## ⚙️ Phase 2: Core Logic (The Engine)
 *Goal: Re-architecting the logic of v3 into structured, maintainable C.*
-- [ ] **Test Harness (TDD):**
+- [x] **Test Harness (TDD):**
     - Implement a data-driven test runner to verify inputs against expected outputs.
     - Establish a handwritten "Gold Standard" suite to prevent regression during the rewrite.
 - [ ] **Memory Model Refactor:**
@@ -42,7 +42,7 @@ v4.0 is a clean rewrite targeting **strict C23 compliance**. It standardizes on 
 - [ ] **Smart Mangling & Preservation:**
     - Reduce reliance on v3's javascript `/*class_next*/` style markers.
     - Implement `/*no_mangle*/` directive support for public API functions.
-- [ ] **CLI Hardening:**
+- [x] **CLI Hardening:**
     - Decouple the argument parser from the GUI entry point.
     - Implement a "Headless Mode" that skips GDI initialization entirely.
 

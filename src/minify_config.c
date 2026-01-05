@@ -434,6 +434,8 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_run:
         case ARG_r:
         {
+            if (pMiniCfg->flagHeadless) break; // Avoid executing parser twice.
+            PostMessageW(pStateGUI->hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
             break;
         }
         }
