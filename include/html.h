@@ -10,6 +10,15 @@
 #include "main_window.h"
 
 //
+// CONFIGURATION CONSTANTS
+//
+
+static constexpr char htmlTagCSS[] = "<!--CSS-->";
+static constexpr char htmlTagFold[] = "<!--FOLD-->";
+static constexpr char htmlTagJS[] = "<!--JS-->";
+static constexpr char htmlTagError[] = "<!--ERROR-->";
+
+//
 // FUNCTION PROTOTYPES
 //
 

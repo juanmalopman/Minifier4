@@ -501,7 +501,11 @@ void parserCommonRun(StateGUI* pStateGUI)
 
             if (wcslen(richInputContent) > MAX_PATH) break; // Process richInputContent as raw console content.
             
-            if (GetFullPathNameW(richInputContent, 0, richInputContent, NULL)) validPath = true; // See if it's malformed to be a valid path.
+            // See if it's malformed to be a valid path.
+            if (!wcspbrk(richInputContent, L"<>\"|?*\n\r"))
+            {
+                 if (GetFullPathNameW(richInputContent, 0, richInputContent, NULL)) validPath = true;
+            }
 
             if (!validPath) break; // Process richInputContent as raw console content.
 
@@ -522,7 +526,8 @@ void parserCommonRun(StateGUI* pStateGUI)
                 appLogPrint(L"Auto-detect option works for file paths only. Defaulting to HTML.", APP_LOG_TO_CONSOLE);
                 extension = radioButtonHTML;
             }
-            parserCommonSpawnParsingThread(pStateGUI, extension, true, richInputContent, len); // Spawned thread frees the memory when (len == true).
+            // Spawned thread frees the memory when (len == true).
+            parserCommonSpawnParsingThread(pStateGUI, extension, true, richInputContent, len * sizeof(wchar_t));
             return; // No fallback for raw processing.
         }        
     }

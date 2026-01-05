@@ -356,9 +356,10 @@ bool mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
     // Flush the pending messages now that there's a valid handle for the main app in the app_logging module. Only way to get the messages up to now.
     appLogPrint(nullptr, APP_LOG_TO_CONSOLE);
 
-    appLogPrint(L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
+
+    mainWindowReplaceRichTextW(pStateGUI->hwnds[richEditInput], L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
             "<meta name='viewport' content='width=device-width, initial-scale=1'>\r\n     <title>"
-            "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>", APP_LOG_TO_INPUT);
+            "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>");
 
     appLogPrint(L"(Output)", APP_LOG_TO_OUTPUT);
 

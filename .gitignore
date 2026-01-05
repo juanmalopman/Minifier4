@@ -1,4 +1,4 @@
-# By file extension
+# By file extension.
 *.d
 *.obj
 *.pdb
@@ -6,15 +6,19 @@
 *.aps
 *.idb
 
-# CMake Build Folders
+# CMake Build Folders.
 build/
 out/
 
-# In case someone uses VS
+# In case someone uses VS.
 .vs/
 
-# Output Binaries
+# Output Binaries.
 bin/
 
 # Custom folder to ignore.
 local/
+
+# Ignore contents of the temp tests folder.
+/tests/integration/temp/*
+!/tests/integration/temp/.gitkeep
