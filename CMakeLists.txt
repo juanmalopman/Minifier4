@@ -87,7 +87,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # dwmapi, uxtheme and comctl32 are for dark theme styling controls
 # shcore is for getting monitor DPI
 # shlwapi is for path strings handling and editing
-target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore shlwapi)
+# shell32 is for SHCreateDirectoryExW (Create directories recursively)
+target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore shlwapi shell32)
 add_compile_definitions(UNICODE _UNICODE)
 
 # --- Convert /miniCfgID.bin path to C-safe format (forward slashes) ---

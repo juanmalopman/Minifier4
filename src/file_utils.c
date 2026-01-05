@@ -8,8 +8,8 @@
 #include <wchar.h>
 #include "file_utils.h"
 #include "app_logging.h"
-#include <shlobj.h> // To get AppData PATH.
-#include <shlwapi.h> // PathCombineW()
+#include <shlobj.h> // To get AppData PATH and SHCreateDirectoryExW
+#include <shlwapi.h> // PathCombineW(), PathRemoveFileSpecW()
 
 //
 // FUNCTIONS
@@ -51,19 +51,28 @@ bool fileUtilsGetAppDataPath(PWSTR path)
 
 bool fileUtilsSaveToFile(LPCWSTR fullPath, LPCVOID buffer, DWORD len)
 {
-	// TODO: Create all intermediate directories if they don't exist whenever saving a file.
+	// Create all intermediate directories if they don't exist.
+    wchar_t folderPath[MAX_PATH];
+    if (wcscpy_s(folderPath, MAX_PATH, fullPath)) return false;
+    PathRemoveFileSpecW(folderPath);
 
-	HANDLE hFileToWrite = NULL;
+    // SHCreateDirectoryExW creates the full path recursively (mkdir -p).
+    int result = SHCreateDirectoryExW(NULL, folderPath, NULL);
+
+    // Check for errors but let CreateFile try anyway in case it's a weird permission issue or root drive.
+    if (result != ERROR_SUCCESS && result != ERROR_FILE_EXISTS && result != ERROR_ALREADY_EXISTS) appLogError(L"Error creating intermediate directories.");
+
+	HANDLE hFileToWrite = nullptr;
 	hFileToWrite = CreateFileW(
 		fullPath,
 		GENERIC_WRITE,
-		FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, // Share with any other app concurrently.
-		NULL, // SECURITY_ATTRIBUTES pointer.
-		CREATE_ALWAYS, // Recreate the file as a whole instead of modifying it.
-		FILE_FLAG_WRITE_THROUGH, 	// Write directly to the disk, bypassing the lazy-write cache. Takes the same time but is a synchoronous write.
-									// TODO: See if you want this synchronous write or not. Useful for uploading files after parsing, but not yet implemented.
-									// TODO: Try using FILE_FLAG_NO_BUFFERING to speed hdd access.
-		NULL // Extended file attributes
+		FILE_SHARE_DELETE |
+        FILE_SHARE_READ |
+        FILE_SHARE_WRITE,         // Share with any other app concurrently.
+		NULL,                     // SECURITY_ATTRIBUTES pointer.
+		CREATE_ALWAYS,            // Recreate the file as a whole instead of modifying it.
+		FILE_FLAG_WRITE_THROUGH,  // Write directly to the disk, bypassing the lazy-write cache. Takes the same time but is a synchoronous write.
+		NULL                      // Extended file attributes
 	);
 
 	// Chequea el éxito de la función anterior.

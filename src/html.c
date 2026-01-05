@@ -104,18 +104,10 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
                     if (pD[i] == '>' && pD[i - 1] == '-' && pD[i - 2] == '-')
                     {
 
-                        // Check against special tags. // TODO: just check for </head> and </body> to skip being so reliant in tags.
-                        if (!_strnicmp(&pD[commentStart], htmlTagCSS, sizeof(htmlTagCSS) - 1))
-                        {
-                            iCSS = o;
-                        }
-                        else if (!_strnicmp(&pD[commentStart], htmlTagFold, sizeof(htmlTagFold) - 1))
+                        // Check against special tags.
+                        if (!_strnicmp(&pD[commentStart], htmlTagFold, sizeof(htmlTagFold) - 1))
                         {
                             iFold = o;
-                        }
-                        else if (!_strnicmp(&pD[commentStart], htmlTagJS, sizeof(htmlTagJS) - 1))
-                        {
-                            iJS = o;
                         }
                         else if (!_strnicmp(&pD[commentStart], htmlTagError, sizeof(htmlTagError) - 1))
                         {
@@ -148,6 +140,8 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             static constexpr char scriptTag[] = "<script>";
             static constexpr char styleEndTag[] = "</style>";
             static constexpr char scriptEndTag[] = "</script>";
+            static constexpr char headEndTag[] = "</head>";
+            static constexpr char bodyEndTag[] = "</body>";
             size_t startIndex;
 
             if (!(i + sizeof(scriptTag) - 1 < len)) goto doDefault;
@@ -163,6 +157,18 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
                 appLogPrint(L"Inline JS found.", APP_LOG_TO_CONSOLE);
                 i += sizeof(scriptTag) - 1;
                 startIndex = i;
+            }
+            else if (!_strnicmp(&pD[i], headEndTag, sizeof(headEndTag) - 1))
+            {
+                appLogPrint(L"Head end found.", APP_LOG_TO_CONSOLE);
+                iCSS = o;
+                goto doDefault;
+            }
+            else if (!_strnicmp(&pD[i], bodyEndTag, sizeof(bodyEndTag) - 1))
+            {
+                appLogPrint(L"Body end found.", APP_LOG_TO_CONSOLE);
+                iJS = o;
+                goto doDefault;
             }
             else
             {

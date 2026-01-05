@@ -44,7 +44,7 @@ bool mainWindowCheckForOtherInstance()
 
     
     // Send WM_COPYDATA with this instance's arguments in look for a "TRUE" as response.
-    COPYDATASTRUCT payload = { 0 };
+    COPYDATASTRUCT payload = { };
 
     LPWSTR cmdLine = GetCommandLineW(); 
 
