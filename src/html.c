@@ -35,10 +35,10 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
     if (!pD)
     {
         appLogPrint(L"HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
-        parserCommonFinished(pStateGUI, 0);
+        parserCommonFinished(pStateGUI, 0, 0);
     } 
 
 
-    parserCommonFinished(pStateGUI, pD);
+    parserCommonFinished(pStateGUI, pD, len);
     return 0;
 }

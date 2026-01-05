@@ -19,7 +19,7 @@ typedef struct StateGUI StateGUI;
 
 typedef struct MiniCfg
 {
-    int64_t buildUniqueID;
+    int miniCfgIDBytes;
 	bool alreadyPresentGUI;
 	bool flagHeadless;
 	wchar_t prevPath[MAX_PATH];

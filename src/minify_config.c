@@ -129,8 +129,8 @@ static constexpr wchar_t CONFIG_FILENAME[] = L"CONFIG";
 static constexpr unsigned char HELP_INFO[] = { 
     #embed "cli_help.txt" limit(3000) // 3000 characters max. File with Windows-1252 encoding.
  }; 
-static constexpr unsigned char buildIDBytes[] = { 
-    #embed CMAKE_PATH_BUILD_ID_BIN limit(8) // 8 bytes, ie. 64 bits.
+static constexpr unsigned char miniCfgIDBytes[] = { 
+    #embed CMAKE_PATH_MINI_CFG_ID_BIN limit(20) // 20 bytes max.
  }; 
 
 //
@@ -203,8 +203,8 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
         // Make stateGUI struct hold the pointer pMiniCfg.
         pStateGUI->pMiniCfg = pMiniCfg;
 
-        // Hold a unique build ID to avoid loading outdated settings files.
-        memcpy(&pMiniCfg->buildUniqueID, buildIDBytes, sizeof(pMiniCfg->buildUniqueID));
+        // Hold a unique m ID to avoid loading outdated settings files.
+        memcpy(&pMiniCfg->miniCfgIDBytes, miniCfgIDBytes, sizeof(pMiniCfg->miniCfgIDBytes));
     }
 
     bool loadedSuccessfully = false;
@@ -220,7 +220,7 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
             if (buffer && len == sizeof(MiniCfg))
             {
                 // Check the unique build ID of the file to load corresponds to current version.
-                if (((MiniCfg*)buffer)->buildUniqueID == pMiniCfg->buildUniqueID)
+                if (((MiniCfg*)buffer)->miniCfgIDBytes == pMiniCfg->miniCfgIDBytes)
                 {                    
                     // Copy the raw bytes from the read buffer into the struct.
                     memcpy(pMiniCfg, buffer, sizeof(MiniCfg)); // TODO: Ensure padding and alignment or opt for a different saving/loading logic.

@@ -61,8 +61,6 @@ static bool internalSetupConsoleAttachment()
 
 int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
-    MessageBoxA(NULL, "Test: ★", "UTF-8 Check", MB_OK);
-    
     // Try to attach to a console. If we fail, we notify errors as popups and not through printf.
     if (!internalSetupConsoleAttachment()) appLogErrorSetup(false);
 

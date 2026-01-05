@@ -1,5 +1,5 @@
-# For support for C23 standards you need updated tools
-cmake_minimum_required(VERSION 4.2)
+# 3.21+ is required for C23.
+cmake_minimum_required(VERSION 3.21)
 
 # --- Project Information ---
 project(Minifier4 
@@ -9,7 +9,8 @@ project(Minifier4
 )
 
 # --- Set C Standard ---
-# CMake still complains if you set C23 here
+set(CMAKE_C_STANDARD 23)
+set(CMAKE_C_STANDARD_REQUIRED ON)
 # set(CMAKE_C_EXTENSIONS OFF)  # windows.h needs extensions on to work properly.
 
 # --- Source Discovery ---
@@ -21,24 +22,33 @@ file(GLOB_RECURSE RC_FILES "res/*.rc")
 option(BUILD_HEADERS_ONLY "Check syntax of headers only" OFF)
 
 # --- Generate Build ID to #embed (Pre-Build Step) ---
+# It's a hash of minify_config.h (declares struct MiniCfg) to prevent for new app instances opening old setting files.
 
-#  Generate the file in the build.
-set(BUILD_ID_FILE "${CMAKE_CURRENT_BINARY_DIR}/appUniqueBuildID.bin")
+set(CONFIG_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include/minify_config.h")
+set(BUILD_ID_FILE "${CMAKE_CURRENT_BINARY_DIR}/miniCfgID.bin")
 
-# Custom target forces the script inside to create a fresh new appUniqueBuildID.bin every build.
-add_custom_target(GenerateBuildID
-    # Tell Ninja this target produces this file to prevent race conditions
-    BYPRODUCTS "${BUILD_ID_FILE}"
+# 1. Use add_custom_command. This creates a dependency rule:
+#    If 'minify_config.h' changes -> Run PowerShell -> Update 'miniCfgID.bin'
+add_custom_command(
+    OUTPUT "${BUILD_ID_FILE}"
+    DEPENDS "${CONFIG_HEADER}"
     
-    # Use .Ticks (100-nanosecond precision) to fill all 64 bits
+    # 1. Compute SHA-256 (32 bytes).
+    # 2. Select index [0..3] (first 4 bytes).
+    # 3. Cast to [byte[]] explicitly so WriteAllBytes accepts it.
     COMMAND powershell -noprofile -ExecutionPolicy Bypass -Command 
-        "[IO.File]::WriteAllBytes('${BUILD_ID_FILE}', [BitConverter]::GetBytes([int64]([DateTime]::UtcNow.Ticks)))"
+        "$h = [System.Security.Cryptography.SHA256]::Create().ComputeHash([System.IO.File]::ReadAllBytes('${CONFIG_HEADER}')); [IO.File]::WriteAllBytes('${BUILD_ID_FILE}', [byte[]]$h[0..3])"
     
-    COMMENT "Generating fresh Build ID (Ticks)..."
+    COMMENT "Generating hash (int size) of minify_config.h..."
     VERBATIM
 )
 
-# Strict compilation dependency (Fix any "file not found" race condition).
+# 2. Keep the target name 'GenerateBuildID' so the dependencies below work.
+#    This target now simply ensures the custom command above has run.
+add_custom_target(GenerateBuildID DEPENDS "${BUILD_ID_FILE}")
+
+# Strict compilation dependency.
+# This forces 'minify_config.c' to recompile whenever the binary hash file changes.
 set_source_files_properties(
     "${CMAKE_CURRENT_SOURCE_DIR}/src/minify_config.c"
     PROPERTIES OBJECT_DEPENDS "${BUILD_ID_FILE}"
@@ -80,7 +90,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore shlwapi)
 add_compile_definitions(UNICODE _UNICODE)
 
-# --- Convert /appUniqueBuildID.bin path to C-safe format (forward slashes) ---
+# --- Convert /miniCfgID.bin path to C-safe format (forward slashes) ---
 file(TO_CMAKE_PATH "${BUILD_ID_FILE}" BUILD_ID_PATH_SAFE)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -91,7 +101,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     CINTERFACE            # C-style COM interface
     COBJMACROS            # C-style COM macros
 
-    CMAKE_PATH_BUILD_ID_BIN=\"${BUILD_ID_PATH_SAFE}\" # Custom definition to include a binary with #embed
+    CMAKE_PATH_MINI_CFG_ID_BIN=\"${BUILD_ID_PATH_SAFE}\" # Custom definition to include a binary with #embed
 )
 
 if(MSVC)

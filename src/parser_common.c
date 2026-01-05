@@ -277,18 +277,146 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
     return false;
 }
 
-void parserCommonFinished(StateGUI* pStateGUI, char* minified)
+// Helper: Checks if a string is non-null and not empty.
+static inline bool internalIsValidString(_In_ const wchar_t* str)
+{
+    return (str != nullptr && str[0] != L'\0');
+}
+
+// Helper: Safely removes a specific directory segment from a path.
+// Returns true if the segment was found and removed, false otherwise.
+// Note: 'dest' and 'src' must NOT overlap.
+static bool internalStripPathSegment(_Out_ wchar_t* dest, _In_ size_t destSize, _In_ const wchar_t* src, _In_ const wchar_t* segment)
+{
+    if (!dest || !src || !segment || !destSize) return false;
+
+    // Safety: Protect against overlapping buffers which wmemcpy_s does not support.
+    if (dest == src) return false;
+
+    size_t segLen = wcslen(segment);
+    const wchar_t* pMatch = src;
+    
+    // Iterate through occurrences of 'segment' to find a whole-word match.
+    while ((pMatch = wcsstr(pMatch, segment)) != nullptr)
+    {
+        // 1. Validate Preceding Character (Start of string or Path Separator).
+        bool startOk = (pMatch == src) || (pMatch[-1] == L'\\') || (pMatch[-1] == L'/');
+
+        // 2. Validate Following Character (End of string or Path Separator).
+        wchar_t nextChar = pMatch[segLen];
+        bool endOk = (nextChar == L'\0') || (nextChar == L'\\') || (nextChar == L'/');
+
+        if (startOk && endOk)
+        {
+            size_t prefixLen = pMatch - src;
+            
+            if (prefixLen >= destSize) return false;
+
+            // Copy the prefix.
+            if (wmemcpy_s(dest, destSize, src, prefixLen) != 0) return false;
+            dest[prefixLen] = L'\0';
+
+            const wchar_t* rest = pMatch + segLen;
+
+            // Logic to remove double separators
+            if (prefixLen > 0 && (dest[prefixLen - 1] == L'\\' || dest[prefixLen - 1] == L'/') && 
+               (*rest == L'\\' || *rest == L'/'))
+            {
+                rest++; 
+            }
+            else if (prefixLen == 0 && (*rest == L'\\' || *rest == L'/'))
+            {
+                rest++;
+            }
+
+            return (wcscat_s(dest, destSize, rest) == 0);
+        }
+        pMatch++;
+    }
+
+    return false;
+}
+
+static void internalSaveAsFile(_In_ MiniCfg* pMiniCfg, _In_ char* minified, _In_ size_t len)
+{
+    // 1. Output Strategy Check.
+    if (pMiniCfg->outOpt == radioButtonNoOutFile) return;
+
+    wchar_t outputFullPath[MAX_PATH] = { };
+    wchar_t tempPath[MAX_PATH] = { };
+
+    // 2. Handle Directory Logic.
+    if (pMiniCfg->outOpt == radioButtonOutFilePath)
+    {
+        // Must have a valid custom output path.
+        if (!internalIsValidString(pMiniCfg->outPath))
+        {
+            appLogPrint(L"Custom output path null or invalid.", APP_LOG_TO_CONSOLE);
+            return;
+        }
+        wcscpy_s(outputFullPath, MAX_PATH, pMiniCfg->outPath);
+    }
+    else if (pMiniCfg->outOpt == radioButtonOutFileStrip)
+    {
+        if (!internalIsValidString(pMiniCfg->stripSeg))
+        {
+            appLogPrint(L"Segment to strip from output path null or invalid.", APP_LOG_TO_CONSOLE);
+            return;
+        }
+
+        // Use temp buffer for manipulation.
+        wcscpy_s(tempPath, MAX_PATH, pMiniCfg->inPath);
+        
+        // Remove filename destructively to get the directory.
+        PathRemoveFileSpecW(tempPath);
+
+        // Attempt to strip the segment.
+        if (!internalStripPathSegment(outputFullPath, MAX_PATH, tempPath, pMiniCfg->stripSeg))
+        {
+            appLogPrint(L"Failed to find the segment to strip from output path.", APP_LOG_TO_CONSOLE);
+            return;
+        }
+    }
+
+    // 3. Handle Filename Logic.
+    wchar_t fileNameToUse[MAX_PATH];
+
+    if (pMiniCfg->outFilename)
+    {
+        if (!internalIsValidString(pMiniCfg->outFile)) 
+        {
+            appLogPrint(L"Custom filename null or invalid.", APP_LOG_TO_CONSOLE);
+            return;
+        }
+        wcscpy_s(fileNameToUse, MAX_PATH, pMiniCfg->outFile);
+    }
+    else
+    {
+        wcscpy_s(fileNameToUse, MAX_PATH, PathFindFileNameW(pMiniCfg->inPath));
+    }
+
+    // Combine Directory + Filename.
+    PathCombineW(outputFullPath, outputFullPath, fileNameToUse);
+
+    // Save file.
+    fileUtilsSaveToFile(outputFullPath, minified, len);
+}
+
+void parserCommonFinished(StateGUI* pStateGUI, char* minified, size_t len)
 {
     MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
     pMiniCfg->currentlyParsing = false;
     mainWindowEnableControls(pStateGUI, true); // Reenable right menu controls.
     appLogPrint(L"Minification finished.", APP_LOG_TO_CONSOLE);
 
-    // If headless, terminate the app.
+    // If headless, do the outputting and terminate the app.
     if (pMiniCfg->flagHeadless)
     {
-        // TODO: Save output file.
-        if (minified) free(minified);
+        if (minified)
+        {
+            internalSaveAsFile(pMiniCfg, minified, len);
+            free(minified);
+        }
         PostQuitMessage(0);
     }
     else
@@ -297,8 +425,13 @@ void parserCommonFinished(StateGUI* pStateGUI, char* minified)
         {
             // Update fallback path.
             wcscpy_s(pMiniCfg->prevPath, MAX_PATH, pMiniCfg->inPath);
-             
+            
+            // Print to the output rich edit control.
             mainWindowReplaceRichTextA(pStateGUI->hwnds[richEditOutput], minified);
+
+            // Do the outputting.
+            internalSaveAsFile(pMiniCfg, minified, len);
+
             free(minified);
         }
     }
@@ -406,7 +539,7 @@ void parserCommonRun(StateGUI* pStateGUI)
     }
     
     // If fallback is not configured, or was tried and failed, return disabled controls to normal.
-    parserCommonFinished(pStateGUI, 0);
+    parserCommonFinished(pStateGUI, 0, 0);
 }
 
 // Initialize the generator by shuffling the alphabets and storing them in a static NameGenerator stuct.

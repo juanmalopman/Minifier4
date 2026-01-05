@@ -33,6 +33,6 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
     char* pD = parserCommonGetPointerToUTF8(data, &len);
 
 
-    parserCommonFinished(pStateGUI, pD);
+    parserCommonFinished(pStateGUI, pD, len);
     return 0;
 }
