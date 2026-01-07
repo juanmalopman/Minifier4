@@ -1,92 +1,180 @@
 {
-  "version": 4,
+  "version": 8,
   "cmakeMinimumRequired": {
-    "major": 4,
-    "minor": 2,
+    "major": 3,
+    "minor": 28,
     "patch": 0
   },
   "configurePresets": [
     {
-      "name": "windows-base",
-      "hidden": true,
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/${presetName}"
-    },
-    {
-      "name": "ninja-base",
+      "name": "base-ninja",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}"
     },
     {
-      "name": "msvc-x64",
-      "inherits": "windows-base",
-      "displayName": "MSVC x64",
-      "description": "Visual Studio Solution"
+      "name": "base-msvc",
+      "hidden": true,
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/${presetName}"
     },
     {
       "name": "gcc",
-      "inherits": "ninja-base",
+      "inherits": "base-ninja",
       "displayName": "GCC (MinGW)",
-      "environment": {
-        "CC": "gcc"
-      },
-      "cacheVariables": {
-        "CMAKE_C_FLAGS": "-m64"
-      },
       "description": "GCC via Ninja",
+      "environment": { "CC": "gcc" },
+      "cacheVariables": {
+        "CMAKE_C_FLAGS": "-m64",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_HEADERS_ONLY": "OFF"
+      },
       "vendor": {
-        "microsoft.com/VisualStudioSettings": {
-          "intelliSenseMode": "windows-gcc-x64"
-        }
+        "microsoft.com/VisualStudioSettings": { "intelliSenseMode": "windows-gcc-x64" }
       }
     },
     {
+      "name": "gcc-headers",
+      "inherits": "gcc",
+      "displayName": "GCC (Headers Only)",
+      "description": "GCC Syntax Check Only",
+      "cacheVariables": { "BUILD_HEADERS_ONLY": "ON" }
+    },
+    {
       "name": "clang",
-      "inherits": "ninja-base",
+      "inherits": "base-ninja",
       "displayName": "Clang (LLVM)",
-      "environment": {
-        "CC": "clang"
-      },
       "description": "Clang via Ninja",
+      "environment": { "CC": "clang" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_HEADERS_ONLY": "OFF"
+      },
       "vendor": {
-        "microsoft.com/VisualStudioSettings": {
-          "intelliSenseMode": "windows-clang-x64"
-        }
+        "microsoft.com/VisualStudioSettings": { "intelliSenseMode": "windows-clang-x64" }
       }
+    },
+    {
+      "name": "clang-headers",
+      "inherits": "clang",
+      "displayName": "Clang (Headers Only)",
+      "description": "Clang Syntax Check Only",
+      "cacheVariables": { "BUILD_HEADERS_ONLY": "ON" }
+    },
+    {
+      "name": "msvc-x64",
+      "inherits": "base-msvc",
+      "displayName": "MSVC x64",
+      "description": "Visual Studio 2026 Solution",
+      "cacheVariables": { "BUILD_HEADERS_ONLY": "OFF" }
+    },
+    {
+      "name": "msvc-headers",
+      "inherits": "msvc-x64",
+      "displayName": "MSVC (Headers Only)",
+      "description": "MSVC Syntax Check Only",
+      "cacheVariables": { "BUILD_HEADERS_ONLY": "ON" }
     }
   ],
   "buildPresets": [
     {
-      "name": "debug",
-      "configurePreset": "msvc-x64",
-      "configuration": "Debug"
-    },
-    {
-      "name": "release",
-      "configurePreset": "msvc-x64",
-      "configuration": "Release"
-    },
-    {
       "name": "gcc-debug",
       "configurePreset": "gcc",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "displayName": "GCC Debug"
     },
     {
       "name": "gcc-release",
       "configurePreset": "gcc",
-      "configuration": "Release"
+      "configuration": "Release",
+      "displayName": "GCC Release"
+    },
+    {
+      "name": "gcc-clean",
+      "configurePreset": "gcc",
+      "configuration": "Debug",
+      "targets": "clean",
+      "displayName": "GCC Clean"
+    },
+    {
+      "name": "gcc-headers",
+      "configurePreset": "gcc-headers",
+      "configuration": "Debug",
+      "displayName": "GCC Headers Check"
     },
     {
       "name": "clang-debug",
       "configurePreset": "clang",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "displayName": "Clang Debug"
     },
     {
       "name": "clang-release",
       "configurePreset": "clang",
-      "configuration": "Release"
+      "configuration": "Release",
+      "displayName": "Clang Release"
+    },
+    {
+      "name": "clang-clean",
+      "configurePreset": "clang",
+      "configuration": "Debug",
+      "targets": "clean",
+      "displayName": "Clang Clean"
+    },
+    {
+      "name": "clang-headers",
+      "configurePreset": "clang-headers",
+      "configuration": "Debug",
+      "displayName": "Clang Headers Check"
+    },
+    {
+      "name": "msvc-debug",
+      "configurePreset": "msvc-x64",
+      "configuration": "Debug",
+      "displayName": "MSVC Debug"
+    },
+    {
+      "name": "msvc-release",
+      "configurePreset": "msvc-x64",
+      "configuration": "Release",
+      "displayName": "MSVC Release"
+    },
+    {
+      "name": "msvc-clean",
+      "configurePreset": "msvc-x64",
+      "configuration": "Debug",
+      "targets": "clean",
+      "displayName": "MSVC Clean"
+    },
+    {
+      "name": "msvc-headers",
+      "configurePreset": "msvc-headers",
+      "configuration": "Debug",
+      "displayName": "MSVC Headers Check"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "gcc-test",
+      "configurePreset": "gcc",
+      "configuration": "Debug",
+      "displayName": "GCC Tests",
+      "output": {"outputOnFailure": true}
+    },
+    {
+      "name": "clang-test",
+      "configurePreset": "clang",
+      "configuration": "Debug",
+      "displayName": "Clang Tests",
+      "output": {"outputOnFailure": true}
+    },
+    {
+      "name": "msvc-test",
+      "configurePreset": "msvc-x64",
+      "configuration": "Debug",
+      "displayName": "MSVC Tests",
+      "output": {"outputOnFailure": true}
     }
   ]
 }
