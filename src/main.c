@@ -61,6 +61,15 @@ static bool internalSetupConsoleAttachment()
     return false;    
 }
 
+static void internalWarnLegacyUsers()
+{
+    if (GetACP() != CP_UTF8)
+    {
+        SetLastError(0);
+        appLogError("This version of Windows lacks required UTF-8 support (Windows 10 version 1903 or newer required). The application may not display or function as intended.");
+    }
+}
+
 int WINAPI WinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
     // Try to attach to a console. If we fail, we notify errors as popups and not through printf.
@@ -68,6 +77,10 @@ int WINAPI WinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE
 
     // If other instance is running, forward arguments and exit.
     if (mainWindowCheckForOtherInstance()) return 0;
+
+    // Warn of unexpected behavior if on legacy Windows.
+    internalWarnLegacyUsers();
+
 
     appLogPrint("Minifier 4 - Juan Manuel López Manzano 2025", APP_LOG_TO_CONSOLE);
 
