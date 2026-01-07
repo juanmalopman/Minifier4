@@ -25,6 +25,24 @@ typedef struct ChildThreads
     HANDLE hThread;
 }ChildThreads;
 
+
+typedef struct ContextHTML
+{
+    int iChildThread;
+    ChildThreads* pChildThreads;
+    size_t iCSS;
+    size_t iFold;
+    size_t iJS;
+    size_t iError[2];
+    size_t o;
+}ContextHTML;
+
+//
+// CONFIGURATION CONSTANTS
+//
+
+static constexpr int nThreadBlock = 99; // How many thread stucts to allocate in memory at a time.
+
 //
 // FUNCTIONS
 //
@@ -34,7 +52,7 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
     // If there's no more memory to store child thread data, allocate.
     if (iChildThread % (nThreadBlock + 1) == nThreadBlock)
     {
-        ChildThreads* temp = realloc(*pChildThreads, nThreadBlock * (iChildThread / nThreadBlock) * sizeof(ChildThreads));
+        ChildThreads* temp = realloc(*pChildThreads, nThreadBlock * ((iChildThread / nThreadBlock) + 1) * sizeof(ChildThreads));
         if (!temp)
         {
             appLogError(L"Failed to allocate memory for helper CSS or JS thread with malloc().");
@@ -81,40 +99,9 @@ static bool internalSpawnHelperThread(_In_ int iChildThread, _Inout_ ChildThread
     return true;
 }
 
-DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
+static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len)
 {
-    ParsingThreadArgs* args = (ParsingThreadArgs*)lpParam;
-    StateGUI* pStateGUI = args->pStateGUI;
-    bool mainParsingThread = args->mainParsingThread;
-    char* data = args->data;
-    size_t len = args->len;
-    bool isPath = args->isPath;
-    free(args);
-
-    if (!mainParsingThread) appLogPrint(L"Not mainParsingThread", APP_LOG_TO_CONSOLE);
-
-    // MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
-
-    // Get the pointer we need, to data forwarded or by opening a file, already in UTF-8.
-    char* pD = parserCommonGetPointerToUTF8(data, &len, isPath);
-    if (!pD)
-    {
-        appLogPrint(L"HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
-        parserCommonFinished(pStateGUI, 0, 0);
-    }
-
-    // A list of helper threads to queue.
-    int iChildThread = 0;
-    static constexpr int nThreadBlock = 99;
-    ChildThreads* pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
-
-    // Indexes to inject code later or aid parsing.
-    size_t iCSS = 0;
-    [[maybe_unused]] size_t iFold = 0;
-    size_t iJS = 0;
-    [[maybe_unused]] size_t iError[2] = { };
-    size_t lastWasNewline = 0; // When '\n' is found, store the index.
-    size_t o = 0; // Output index.
+    size_t lastWasNewline = 0;
     for (size_t i = 0; i < len; i++ )
     {
         switch (pD[i])
@@ -162,7 +149,7 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             if (pD[i - 1] == '<' && pD[i + 1] == '-' && pD[i + 2] == '-')
             {
                 // Erase last written char because it was part of a comment.
-                o--;
+                ctx->o--;
 
                 size_t commentStart = i - 1;
 
@@ -177,14 +164,14 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
                         // Check against special tags.
                         if (!_strnicmp(&pD[commentStart], htmlTagFold, sizeof(htmlTagFold) - 1))
                         {
-                            iFold = o;
+                            ctx->iFold = ctx->o;
                         }
                         else if (!_strnicmp(&pD[commentStart], htmlTagError, sizeof(htmlTagError) - 1))
                         {
                             // First index for an error page title.
-                            if (!iError[0]) iError[0] = o;
+                            if (!ctx->iError[0]) ctx->iError[0] = ctx->o;
                             // Next for an error page banner in body.
-                            else iError[1] = o;
+                            else ctx->iError[1] = ctx->o;
                         }
                         
                         // Erase whitespaces after comments. User must avoid comments in the middle of strings.
@@ -231,13 +218,13 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             else if (!_strnicmp(&pD[i], headEndTag, sizeof(headEndTag) - 1))
             {
                 appLogPrint(L"Head end found.", APP_LOG_TO_CONSOLE);
-                iCSS = o;
+                ctx->iCSS = ctx->o;
                 goto doDefault;
             }
             else if (!_strnicmp(&pD[i], bodyEndTag, sizeof(bodyEndTag) - 1))
             {
                 appLogPrint(L"Body end found.", APP_LOG_TO_CONSOLE);
-                iJS = o;
+                ctx->iJS = ctx->o;
                 goto doDefault;
             }
             else
@@ -288,13 +275,13 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             memcpy(buffer, &pD[startIndex], bufferLen);
             buffer[bufferLen] = '\0'; // Null terminate the string.
 
-            if(!internalAllocateChildThreadStructMem(iChildThread, &pChildThreads, nThreadBlock))
+            if(!internalAllocateChildThreadStructMem(ctx->iChildThread, &ctx->pChildThreads, nThreadBlock))
             {
                 free(buffer);
                 break;
             }
 
-            internalQueueHelperThread(&iChildThread, pChildThreads, false, isCSS, buffer, bufferLen);
+            internalQueueHelperThread(&ctx->iChildThread, ctx->pChildThreads, false, isCSS, buffer, bufferLen);
 
             break;
         }
@@ -302,77 +289,76 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
         doDefault:
         {
             // By default, chars get written into the ouput.
-            pD[o++] = pD[i];
+            pD[ctx->o++] = pD[i];
             break;
         }
         }
-    }
+    } 
+}
 
-    // Ensure null termination (without incrementing the index, to avoid written files to be null terminated).
-    if (o < len) pD[o] = '\0';
-
-    // If no helper CSS or JS threads to spawn, we're done.
-    if (!iChildThread)
-    {
-        parserCommonFinished(pStateGUI, pD, o);
-        return 0;
-    }
-
+static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ char** pO, _Out_ size_t* pTotalLen)
+{
     // If there's nowhere valid to inject CSS and JS, terminate.
-    if (!iCSS || !iJS || iJS <= iCSS)
+    if (!ctx->iCSS || !ctx->iJS || ctx->iJS <= ctx->iCSS)
     {
         free(pD);
-        parserCommonFinished(pStateGUI, nullptr, 0);
-        return 0;
+        *pO = nullptr;
+        *pTotalLen = 0;
+        return;
     }
 
     // With all the classes and IDs registered, spawn all queued threads.
-    for (int i = 0; i < iChildThread; i++)
+    for (int i = 0; i < ctx->iChildThread; i++)
     {
-        internalSpawnHelperThread(i, pChildThreads);
+        internalSpawnHelperThread(i, ctx->pChildThreads);
     }
 
     // Wait for any helper thread spawned to finish it's work and terminate.
-    if (iChildThread)
+    if (ctx->iChildThread)
     {
-        HANDLE* handleArray = malloc(iChildThread * sizeof(HANDLE));
-        for (int i = 0; i < iChildThread; i++) handleArray[i] = pChildThreads->hThread;
-        DWORD waitResult = WaitForMultipleObjects(iChildThread, handleArray, TRUE, 3000);
+        HANDLE* handleArray = malloc(ctx->iChildThread * sizeof(HANDLE));
+        for (int i = 0; i < ctx->iChildThread; i++) handleArray[i] = ctx->pChildThreads[i].hThread;
+        DWORD waitResult = WaitForMultipleObjects(ctx->iChildThread, handleArray, TRUE, 3000);
 
         if (waitResult == WAIT_TIMEOUT)
         {
             appLogError(L"ERROR: Helper threads not done processing 3 seconds later.");
             // TODO: Terminate them.
+            free(pD);
+            *pO = nullptr;
+            *pTotalLen = 0;
+            return;
         }
     }
 
     // See total output len.
-    size_t totalLen = o;
-    for (int i = 0; i < iChildThread; i++) totalLen += pChildThreads->parsingThreadArgs.len;
+    *pTotalLen = ctx->o;
+    for (int i = 0; i < ctx->iChildThread; i++) *pTotalLen += ctx->pChildThreads[i].parsingThreadArgs.len; 
 
     // Allocate for the output.
-    char* pO = malloc(totalLen);
-    if (!pO)
+    *pO = malloc(*pTotalLen);
+    if (!*pO)
     {
         appLogError(L"Failed to allocate memory for entire output.");
         free(pD);
-        parserCommonFinished(pStateGUI, nullptr, 0);
-        return 0;
+        *pO = nullptr;
+        *pTotalLen = 0;
+        return;
     }
 
     // Tie all helper threads output together.
-    char* pCursor = pO;
+    char* pCursor = *pO;
 
-    memcpy(pCursor, pD, iCSS); // Copy HTML up to the CSS start.
-    pCursor += iCSS;
+    memcpy(pCursor, pD, ctx->iCSS); // Copy HTML up to the CSS start.
+    pCursor += ctx->iCSS;
 
     // Copy any CSS.
-    for (int i = 0; i < iChildThread; i++)
+    for (int i = 0; i < ctx->iChildThread; i++)
     {
-        if (pChildThreads[i].isCSS)
+        if (ctx->pChildThreads[i].isCSS)
         {
-            char* pData = pChildThreads[i].parsingThreadArgs.data;
-            size_t len  = (size_t)pChildThreads[i].parsingThreadArgs.len;
+            char* pData = ctx->pChildThreads[i].parsingThreadArgs.data;
+            size_t len  = ctx->pChildThreads[i].parsingThreadArgs.len;
 
             if (pData != nullptr && len > 0)
             {
@@ -382,17 +368,17 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
         }
     }
 
-    size_t lenMiddle = iJS - iCSS;
-    memcpy(pCursor, pD + iCSS, lenMiddle); // Copy HTML up to the JS start.
+    size_t lenMiddle = ctx->iJS - ctx->iCSS;
+    memcpy(pCursor, pD + ctx->iCSS, lenMiddle); // Copy HTML up to the JS start.
     pCursor += lenMiddle;
 
     // Copy any JS.
-    for (int i = 0; i < iChildThread; i++)
+    for (int i = 0; i < ctx->iChildThread; i++)
     {
-        if (!pChildThreads[i].isCSS)
+        if (!ctx->pChildThreads[i].isCSS)
         {
-            char* pData = pChildThreads[i].parsingThreadArgs.data;
-            size_t len  = (size_t)pChildThreads[i].parsingThreadArgs.len;
+            char* pData = ctx->pChildThreads[i].parsingThreadArgs.data;
+            size_t len  = ctx->pChildThreads[i].parsingThreadArgs.len;
 
             if (pData != nullptr && len > 0)
             {
@@ -402,13 +388,51 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
         }
     }
 
-    size_t lenFooter = (size_t)o - iJS;
-    memcpy(pCursor, pD + iJS, lenFooter + 1); // Copy HTML up to the end.
-
+    size_t lenFooter = ctx->o - ctx->iJS;
+    memcpy(pCursor, pD + ctx->iJS, lenFooter + 1); // Copy HTML up to the end.
 
     free(pD);
-     
+}
+
+DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
+{
+    ParsingThreadArgs argsStack;
+    memcpy(&argsStack, lpParam, sizeof(ParsingThreadArgs));
+    free(lpParam);
+    StateGUI* pStateGUI = argsStack.pStateGUI;
+    size_t len = argsStack.len;
+
+    // Get the pointer we need, to data forwarded or by opening a file, already in UTF-8.
+    char* pD = parserCommonGetPointerToUTF8(argsStack.data, &len, argsStack.isPath);
+    if (!pD)
+    {
+        appLogPrint(L"HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
+        parserCommonFinished(pStateGUI, 0, 0);
+        return 0;
+    }
+
+    ContextHTML contextHTML = { };
+    ContextHTML* ctx = &contextHTML;
+    ctx->pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
+
+    internalParseHTML(ctx, pD, len);
+
+    // Ensure null termination (without incrementing the index, to avoid written files to be null terminated).
+    if (ctx->o < len) pD[ctx->o] = '\0';
+
+    // If no helper CSS or JS threads to spawn, we're done.
+    if (!ctx->iChildThread)
+    {
+        parserCommonFinished(pStateGUI, pD, ctx->o);
+        return 0;
+    }
+
+
+    size_t totalLen;
+    char* pO;
+    internalStitching(ctx, pD, &pO, &totalLen);
+
     parserCommonFinished(pStateGUI, pO, totalLen);
-    return 0;
     
+    return 0;
 }
