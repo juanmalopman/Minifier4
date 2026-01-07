@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include "parser_common.h"
 #include "main_window.h"
 #include "minify_config.h"

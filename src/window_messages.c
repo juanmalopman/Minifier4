@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <vsstyle.h> // Required for BP_CHECKBOX (Redrawing radio buttons).
 #include <vssym32.h> // Required for CBS_UNCHECKEDNORMAL (Redrawing radio buttons).
 #include <commctrl.h> // Allows some UI controls to be subclassed and some messages handled to change their graphics. (Library added to CMakeLists.txt).
@@ -25,21 +26,21 @@ static void internalAppendToRichEditOrSendToConsole(_In_ HWND hWnd, _In_  LPARAM
 {
     if (!hWnd)
     {
-        wprintf (L"%s\n", (wchar_t*)lParam);
+        printf ("%s\n", (char*)lParam);
     }
     else
     {
         // Ensure there's text in the rich edit control so that any future EM_REPLACESEL has the right font.
-        SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+        SendMessageA(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
         appLogSetFormatting(hWnd);
-        SendMessageW(hWnd, EM_REPLACESEL, 0, lParam);
-        SendMessageW(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
-        SendMessageW(hWnd, EM_REPLACESEL, 0, (LPARAM)L"\n");
-        SendMessageW(hWnd, WM_VSCROLL, SB_BOTTOM, 0);
+        SendMessageA(hWnd, EM_REPLACESEL, 0, lParam);
+        SendMessageA(hWnd, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+        SendMessageA(hWnd, EM_REPLACESEL, 0, (LPARAM)"\n");
+        SendMessageA(hWnd, WM_VSCROLL, SB_BOTTOM, 0);
 
 
     }
-    free((wchar_t*)lParam); // Free heap.
+    free((char*)lParam); // Free heap.
 }
 
 
@@ -66,7 +67,7 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
     }
 
     // Guard: If message comes before NCCREATE, or pStateGUI is nullptr, don't try pStateGUI->hwnds[something].
-    if (!pStateGUI) return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+    if (!pStateGUI) return DefWindowProcA(hWnd, uMsg, wParam, lParam);
 
     switch (uMsg)
     {
@@ -92,19 +93,19 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         // Thread-Safe. Loop at 99999 messages.
         LONG lineNumberToPrint = (InterlockedIncrement(&currentLine) % 99999);
 
-        // Cast the lParam back to our wchar_t pointer
-        wchar_t* pMessage = (wchar_t*)lParam;
+        // Cast the lParam back to our char pointer
+        char* pMessage = (char*)lParam;
 
-        if (wcslen(pMessage) < APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1)
+        if (strlen(pMessage) < APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1)
         {
             free(pMessage); // internalAppendToRichEditControl won't free the heap if we return 0 here.
             return 0;
         }
 
         // Copy the number as a null terminated array first, and then to lParam/pMessage.
-        wchar_t tempNum[APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1]; 
-        swprintf_s(tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, L"%05d", lineNumberToPrint);
-        wmemcpy_s(pMessage, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT);
+        char tempNum[APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1]; 
+        sprintf_s(tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, "%05d", lineNumberToPrint);
+        memcpy_s(pMessage, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT + 1, tempNum, APP_LOG_CONSOLE_NUMBER_DIGIT_COUNT);
 
         internalAppendToRichEditOrSendToConsole( pStateGUI->hwnds[richEditConsole], lParam);
         return 0;
@@ -122,9 +123,9 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         {
             switch LOWORD(wParam)
             {
-            case editFilename: GetDlgItemText(hWnd, editFilename, pStateGUI->pMiniCfg->outFile, MAX_PATH); break;
-            case editPathStrip: GetDlgItemText(hWnd, editPathStrip, pStateGUI->pMiniCfg->stripSeg, MAX_PATH); break;
-            case editOutDir: GetDlgItemText(hWnd, editOutDir, pStateGUI->pMiniCfg->outPath, MAX_PATH); break;
+            case editFilename: GetDlgItemTextA(hWnd, editFilename, pStateGUI->pMiniCfg->outFile, MAX_PATH); break;
+            case editPathStrip: GetDlgItemTextA(hWnd, editPathStrip, pStateGUI->pMiniCfg->stripSeg, MAX_PATH); break;
+            case editOutDir: GetDlgItemTextA(hWnd, editOutDir, pStateGUI->pMiniCfg->outPath, MAX_PATH); break;
             }
         }
 
@@ -258,6 +259,6 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         return 0;
     }
     }
-    return DefWindowProcW(hWnd, uMsg, wParam, lParam);
+    return DefWindowProcA(hWnd, uMsg, wParam, lParam);
 }
 

@@ -6,7 +6,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wchar_t, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, char, etc.
 #include "main_window.h"
 
 //

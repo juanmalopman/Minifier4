@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <stdio.h> // wprintf
 #include <shellapi.h> // Required for CommandLineToArgvW
 #include <shlwapi.h> // Required for PathFindFileNameW
@@ -99,7 +100,7 @@ static const wchar_t* const argStrs[] = {
     L"-rm",
     L"--no-random-mangle",
     L"-nrm",
-    L"--HTML",
+    L"--HTM",
     L"--CSS",
     L"--JS",
     L"--auto-detect",
@@ -125,7 +126,7 @@ static const wchar_t* const argStrs[] = {
 };
 static_assert( _countof(argStrs) == countOfArgs, "Count mismatch: Match argStrs[] and enumOfArgs!" );
 
-static constexpr wchar_t CONFIG_FILENAME[] = L"CONFIG";
+static constexpr char CONFIG_FILENAME[] = "CONFIG";
 static constexpr unsigned char HELP_INFO[] = { 
     #embed "cli_help.txt" limit(3000) // 3000 characters max. File with Windows-1252 encoding.
  }; 
@@ -139,22 +140,22 @@ static constexpr unsigned char miniCfgIDBytes[] = {
 
 void miniCfgSave(MiniCfg* pMiniCfg)
 {
-    wchar_t path[MAX_PATH] = { };
+    char path[MAX_PATH] = { };
     if (fileUtilsGetAppDataPath(path))
     {
-        wchar_t fullPath[MAX_PATH];
-        PathCombineW(fullPath, path, CONFIG_FILENAME);
+        char fullPath[MAX_PATH];
+        PathCombineA(fullPath, path, CONFIG_FILENAME);
         if (fileUtilsSaveToFile(fullPath, (LPCVOID)pMiniCfg, sizeof(MiniCfg)))
         {
-            appLogPrint(L"Settings saved.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Settings saved.", APP_LOG_TO_CONSOLE);
             return;
         }
     }
 
-    appLogPrint(L"Failed to save settings.", APP_LOG_TO_CONSOLE);    
+    appLogPrint("Failed to save settings.", APP_LOG_TO_CONSOLE);    
 }
 
-static void internalLoadDefaults(_Out_ MiniCfg* pMiniCfg, _In_ wchar_t* fullPath)
+static void internalLoadDefaults(_Out_ MiniCfg* pMiniCfg, _In_ char* fullPath)
 {
     pMiniCfg->flagHeadless = false;
     pMiniCfg->prevPath[0] = L'\0';
@@ -169,21 +170,21 @@ static void internalLoadDefaults(_Out_ MiniCfg* pMiniCfg, _In_ wchar_t* fullPath
 
     if (fullPath)
     {
-        wcscpy_s(pMiniCfg->inPath, MAX_PATH, fullPath);
+        strcpy_s(pMiniCfg->inPath, MAX_PATH, fullPath);
 
         pMiniCfg->outFilename = true;
         // Get pointer to the start of the filename (e.g. index.html").
-        wchar_t* nameStart = PathFindFileNameW(fullPath);
+        char* nameStart = PathFindFileNameA(fullPath);
 
         // Get pointer to the start of the extension (e.g., ".html").
-        wchar_t* extStart = PathFindExtensionW(nameStart);
+        char* extStart = PathFindExtensionA(nameStart);
 
         // Calculate length of the name excluding the extension.
         int nameLen = (int)(extStart - nameStart);
 
         // Construct the default filename string using "%.*s".
         //    %.*s takes two arguments: the length to print, and the string.
-        swprintf_s(pMiniCfg->outFile, MAX_PATH, L"%.*s_min%s", nameLen, nameStart, extStart);
+        sprintf_s(pMiniCfg->outFile, MAX_PATH, "%.*s_min%s", nameLen, nameStart, extStart);
     }
     else
     {
@@ -208,13 +209,13 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
     }
 
     bool loadedSuccessfully = false;
-    wchar_t path[MAX_PATH] = { };
+    char path[MAX_PATH] = { };
     if (fileUtilsGetAppDataPath(path))
     {
         void* buffer = nullptr;
         size_t len = 0;
-        wchar_t fullPath[MAX_PATH];
-        PathCombineW(fullPath, path, CONFIG_FILENAME);
+        char fullPath[MAX_PATH];
+        PathCombineA(fullPath, path, CONFIG_FILENAME);
         if (fileUtilsReadFromFile(fullPath, nullptr, &buffer, &len))
         {
             if (buffer && len == sizeof(MiniCfg))
@@ -228,7 +229,7 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
                 }
                 else
                 {
-                    appLogPrint(L"Settings from an older build detected.", APP_LOG_TO_CONSOLE);
+                    appLogPrint("Settings from an older build detected.", APP_LOG_TO_CONSOLE);
                 }
             }
 
@@ -244,14 +245,14 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
 
     if (loadedSuccessfully)
     {
-        appLogPrint(L"Settings loaded successfully.", APP_LOG_TO_CONSOLE);
+        appLogPrint("Settings loaded successfully.", APP_LOG_TO_CONSOLE);
         mainWindowUpdateControls(pStateGUI);
         return;
     }
 
     if (!isStartup)
     {
-        appLogPrint(L"Failed to load settings.", APP_LOG_TO_CONSOLE);
+        appLogPrint("Failed to load settings.", APP_LOG_TO_CONSOLE);
         return;
     }
 
@@ -262,15 +263,15 @@ void miniCfgLoad(MiniCfg* pMiniCfg, StateGUI* pStateGUI)
 
 typedef struct StringParams
 {
-    wchar_t paramInPath[MAX_PATH];
-    wchar_t paramStripSeg[MAX_PATH];
-    wchar_t paramOutPath[MAX_PATH];
-    wchar_t paramOutFile[MAX_PATH];
+    char paramInPath[MAX_PATH];
+    char paramStripSeg[MAX_PATH];
+    char paramOutPath[MAX_PATH];
+    char paramOutFile[MAX_PATH];
 }StringParams;
 static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* pMiniCfg, _In_ ArgsBitField* pArgsBitField, StringParams* pStringParams)
 {
 
-    wchar_t pathValidationBuffer[MAX_PATH];
+    char pathValidationBuffer[MAX_PATH];
 
     // Parse all arguments.
     for (int i = 0; i < countOfArgs; i++)
@@ -284,7 +285,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_d:
         {
             // If a valid input path was specified, forward it.
-            if (pStringParams->paramInPath[0] && GetFullPathNameW(pStringParams->paramInPath, MAX_PATH, pathValidationBuffer, NULL))
+            if (pStringParams->paramInPath[0] && GetFullPathNameA(pStringParams->paramInPath, MAX_PATH, pathValidationBuffer, NULL))
             {
                 internalLoadDefaults(pMiniCfg, pathValidationBuffer);
             }
@@ -305,9 +306,9 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_i:
         {
             // If a valid input path was specified, store it.
-            if (pStringParams->paramInPath[0] && GetFullPathNameW(pStringParams->paramInPath, MAX_PATH, pathValidationBuffer, NULL))
+            if (pStringParams->paramInPath[0] && GetFullPathNameA(pStringParams->paramInPath, MAX_PATH, pathValidationBuffer, NULL))
             {
-                wcscpy_s(pMiniCfg->inPath, MAX_PATH, pathValidationBuffer);
+                strcpy_s(pMiniCfg->inPath, MAX_PATH, pathValidationBuffer);
             }
             break;
         }
@@ -381,7 +382,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
             if (pStringParams->paramStripSeg[0])
             {
                 pMiniCfg->outOpt = radioButtonOutFileStrip;
-                wcscpy_s(pMiniCfg->stripSeg, MAX_PATH, pStringParams->paramStripSeg);
+                strcpy_s(pMiniCfg->stripSeg, MAX_PATH, pStringParams->paramStripSeg);
             }
             break;
         }
@@ -389,10 +390,10 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_op:
         {
             // If a valid output path was specified, store it.
-            if (pStringParams->paramOutPath[0] && GetFullPathNameW(pStringParams->paramOutPath, MAX_PATH, pathValidationBuffer, NULL))
+            if (pStringParams->paramOutPath[0] && GetFullPathNameA(pStringParams->paramOutPath, MAX_PATH, pathValidationBuffer, NULL))
             {
                 pMiniCfg->outOpt = radioButtonOutFilePath;
-                wcscpy_s(pMiniCfg->outPath, MAX_PATH, pathValidationBuffer);
+                strcpy_s(pMiniCfg->outPath, MAX_PATH, pathValidationBuffer);
             }
             break;
         }
@@ -403,7 +404,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
             if (pStringParams->paramOutFile[0])
             {
                 pMiniCfg->outFilename = true;
-                wcscpy_s(pMiniCfg->outFile, MAX_PATH, pStringParams->paramOutFile);
+                strcpy_s(pMiniCfg->outFile, MAX_PATH, pStringParams->paramOutFile);
             }
             break;
         }
@@ -435,7 +436,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_r:
         {
             if (pMiniCfg->flagHeadless) break; // Avoid executing parser twice.
-            PostMessageW(pStateGUI->hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
+            PostMessageA(pStateGUI->hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
             break;
         }
         }
@@ -461,7 +462,7 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
     if (run)
     {
         // Trigger a delayed minification. Post to wndProc and wait for windows to be ready somehow? Checking hwnds[countOfHwnds - 1] maybe.
-        // PostMessageW(MSGCUSTOM_MINIFY);
+        // PostMessageA(MSGCUSTOM_MINIFY);
     }
 
     return true;
@@ -471,7 +472,7 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
 {
     if (pMiniCfg->currentlyParsing)
     {
-        appLogPrint(L"Forwarded arguments received but ignored. Parsing currently in progress.", APP_LOG_TO_CONSOLE);
+        appLogPrint("Forwarded arguments received but ignored. Parsing currently in progress.", APP_LOG_TO_CONSOLE);
     }
 
 	// Split argument string into the individual constituent arguments. 
@@ -504,28 +505,28 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
     {   
         bool foundMatch = false;
         // Check against each flag.
+        size_t convertedChars = 0;
         for(int f = 0; f < countOfArgs; f++)
         {
             if (!_wcsicmp(argv[a], argStrs[f]))
             {
                 argsBitField |= (((ArgsBitField)1) << f); // Cast 1 to ArgsBitField before possibly shifting it more than 32 places.
-
                 // Sprecial cases. For all flags that require a parameter; consume the next argument.
                 if ((f == ARG_input || f == ARG_i) && ++a < argc) 
                 {
-                    wcscpy_s(stringParams.paramInPath, MAX_PATH, argv[a]); // Input path specified.
+                    wcstombs_s(&convertedChars, stringParams.paramInPath, MAX_PATH, argv[a], _TRUNCATE); // Input path specified.
                 }
                 else if ((f == ARG_out_strip || f == ARG_os) && ++a < argc)
                 {
-                    wcscpy_s(stringParams.paramStripSeg, MAX_PATH, argv[a]); // PATH segment to stip specified.
+                    wcstombs_s(&convertedChars, stringParams.paramStripSeg, MAX_PATH, argv[a], _TRUNCATE); // PATH segment to stip specified.
                 }
                 else if ((f == ARG_out_path || f == ARG_op) && ++a < argc)
                 {
-                    wcscpy_s(stringParams.paramOutPath, MAX_PATH, argv[a]); // Complete output PATH specified.
+                    wcstombs_s(&convertedChars, stringParams.paramOutPath, MAX_PATH, argv[a], _TRUNCATE); // Complete output PATH specified.
                 }
                 else if ((f == ARG_out_file || f == ARG_of) && ++a < argc)
                 {
-                     wcscpy_s(stringParams.paramOutFile, MAX_PATH, argv[a]); // Custom output filename specified.
+                     wcstombs_s(&convertedChars, stringParams.paramOutFile, MAX_PATH, argv[a], _TRUNCATE); // Custom output filename specified.
                 }
                 foundMatch = true;
                 break;
@@ -534,8 +535,8 @@ bool miniCfgParseCLI(MiniCfg* pMiniCfg, StateGUI* pStateGUI, PWSTR forwardedArgs
 
         if (foundMatch) continue;
 
-        wchar_t unrecognizedArg[MAX_PATH];
-        swprintf_s(unrecognizedArg, MAX_PATH, L"ERROR: Unrecognized argument: %s", argv[a]);
+        char unrecognizedArg[MAX_PATH];
+        sprintf_s(unrecognizedArg, MAX_PATH, "ERROR: Unrecognized argument: %s", argv[a]);
         appLogError(unrecognizedArg);
         break;
     

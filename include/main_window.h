@@ -5,7 +5,8 @@
 //
 
 #include <windows.h>
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 
 //
 // FORWARD DECLARATIONS
@@ -100,7 +101,7 @@ static_assert(countOfHwnd       == editEnd,        "ERROR: Mangled enum, detecte
 // CONFIGURATION CONSTANTS
 //
 
-static constexpr wchar_t MAIN_WINDOW_NAME[] = L"Minifier 4";
+static constexpr char MAIN_WINDOW_NAME[] = "Minifier 4";
 static constexpr COLORREF MAIN_WINDOW_GRAY_BKG = RGB(32, 32, 32);
 static constexpr COLORREF MAIN_WINDOW_WHITE_TXT = RGB(248, 248, 242);
 static constexpr LRESULT MAIN_WINDOW_CDRF_NOTHANDLED = -1; // Custom LRETURN for mainWindowRadioBtnCustomDraw.
@@ -143,8 +144,8 @@ bool mainWindowCheckForOtherInstance();
 bool mainWindowInit(_In_ HINSTANCE hInstance, _Inout_ StateGUI* pStateGUI);
 LRESULT mainWindowSizing(_In_ StateGUI* pStateGUI, _In_ LPARAM lParam);
 HFONT mainWindowGetFont(_In_ UINT dpi);
-void mainWindowReplaceRichTextA(_In_ HWND hWnd, _In_ char* message);
-void mainWindowReplaceRichTextW(_In_ HWND hWnd, _In_ wchar_t* message);
+void mainWindowReplaceRichText(_In_ HWND hWnd, _In_ char* message);
+void mainWindowReplaceRichText(_In_ HWND hWnd, _In_ char* message);
 void mainWindowUpdateControls(_In_ StateGUI* pStateGUI);
 void mainWindowEnableControls(_In_ StateGUI* pStateGUI, _In_ bool enable);
 LRESULT mainWindowRadioBtnCustomDraw(_Inout_ LPARAM lParam, _In_ StateGUI* pStateGUI);

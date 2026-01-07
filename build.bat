@@ -33,6 +33,9 @@ shift
 goto :PARSE_ARGS
 :ARGS_DONE
 
+:: --- Force CMake to know the Build Type (Required for Ninja/GCC) ---
+set "CMAKE_EXTRA_ARGS=%CMAKE_EXTRA_ARGS% -DCMAKE_BUILD_TYPE=%BUILD_TYPE%"
+
 :: --- 3: Determine CMake Preset based on inputs ---
 if "%COMPILER_MODE%"=="MSVC" (
     if "%BUILD_TYPE%"=="Debug" set "TARGET_PRESET=debug"

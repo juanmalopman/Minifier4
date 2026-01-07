@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <stdio.h> // freopen_s, setvbuf, etc.
 #include "main_window.h"
 #include "minify_config.h"
@@ -60,7 +61,7 @@ static bool internalSetupConsoleAttachment()
     return false;    
 }
 
-int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PWSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
+int WINAPI WinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANCE hPrevInstance, [[maybe_unused]] _In_ PSTR pCmdLine, [[maybe_unused]] _In_ int nCmdShow)
 {
     // Try to attach to a console. If we fail, we notify errors as popups and not through printf.
     if (!internalSetupConsoleAttachment()) appLogErrorSetup(false);
@@ -68,7 +69,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANC
     // If other instance is running, forward arguments and exit.
     if (mainWindowCheckForOtherInstance()) return 0;
 
-    appLogPrint(L"Minifier 4 - Juan Manuel López Manzano 2025", APP_LOG_TO_CONSOLE);
+    appLogPrint("Minifier 4 - Juan Manuel López Manzano 2025", APP_LOG_TO_CONSOLE);
 
     // Load default minification settings.
     MiniCfg miniCfg = { };
@@ -86,7 +87,7 @@ int WINAPI wWinMain(_In_ HINSTANCE hInstance, [[maybe_unused]] _In_opt_ HINSTANC
         if (miniCfg.flagHeadless)
         {
             if (!mainWindowMsgOnlyWindowInit(hInstance, &stateGUI)){ return 1; }
-            PostMessageW(stateGUI.hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
+            PostMessageA(stateGUI.hwnds[mainWindow], MSGCUSTOM_RUN_MINIFICATION, 0, 0);
         }
         else
         {

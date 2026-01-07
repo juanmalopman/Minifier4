@@ -5,7 +5,8 @@
 //
 
 #include <windows.h>
-#include <wchar.h> // swprintf_s, wchar_t, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, char, etc.
 
 //
 // FORWARD DECLARATIONS
@@ -22,17 +23,17 @@ typedef struct MiniCfg
     int miniCfgIDBytes;
 	bool alreadyPresentGUI;
 	bool flagHeadless;
-	wchar_t prevPath[MAX_PATH];
-	wchar_t inPath[MAX_PATH];
+	char prevPath[MAX_PATH];
+	char inPath[MAX_PATH];
     int inputType;
     bool fallbackToPrevFile;
     bool mangle;
     bool randomMangle;
     int outOpt;
-    wchar_t stripSeg[MAX_PATH];
-    wchar_t outPath[MAX_PATH];
+    char stripSeg[MAX_PATH];
+    char outPath[MAX_PATH];
     bool outFilename;
-    wchar_t outFile[MAX_PATH];
+    char outFile[MAX_PATH];
     bool currentlyParsing;
 } MiniCfg;
 

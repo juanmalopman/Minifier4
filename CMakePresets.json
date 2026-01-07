@@ -35,7 +35,12 @@
       "cacheVariables": {
         "CMAKE_C_FLAGS": "-m64"
       },
-      "description": "GCC via Ninja"
+      "description": "GCC via Ninja",
+      "vendor": {
+        "microsoft.com/VisualStudioSettings": {
+          "intelliSenseMode": "windows-gcc-x64"
+        }
+      }
     },
     {
       "name": "clang",
@@ -44,7 +49,12 @@
       "environment": {
         "CC": "clang"
       },
-      "description": "Clang via Ninja"
+      "description": "Clang via Ninja",
+      "vendor": {
+        "microsoft.com/VisualStudioSettings": {
+          "intelliSenseMode": "windows-clang-x64"
+        }
+      }
     }
   ],
   "buildPresets": [

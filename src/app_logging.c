@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <richedit.h> // For the rich edit control used as a console.
 #include "app_logging.h"
 #include "window_messages.h"
@@ -17,7 +18,7 @@
 
 typedef struct PendingMessages
 {
-    wchar_t* heap;
+    char* heap;
     UINT dstControl; 
 }PendingMessages;
 
@@ -33,9 +34,9 @@ static volatile int pendingMessagesIndex = 0;
 // FUNCTIONS
 //
 
-void appLogAlertPop(LPCWSTR message)
+void appLogAlertPop(PCSTR message)
 {
-    MessageBoxW(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
+    MessageBoxA(NULL, message, MAIN_WINDOW_NAME, MB_OK | MB_ICONINFORMATION);
 }
 
 static HWND mainWindowHWND = nullptr;
@@ -45,12 +46,12 @@ void appLogPrintSetup(HWND hMain)
 }
 
 // Sends a string to the UI thread.
-static void internalPostToMainWindow(_In_ wchar_t* buffer, _In_ UINT whichControl)
+static void internalPostToMainWindow(_In_ char* buffer, _In_ UINT whichControl)
 {
     if (!buffer) { return; }
 
     // Use PostMessage (Asynchronous).
-    BOOL result = PostMessageW(mainWindowHWND, whichControl, 0, (LPARAM)buffer);
+    BOOL result = PostMessageA(mainWindowHWND, whichControl, 0, (LPARAM)buffer);
 
     // If the message wasn't posted, free heap memory here.
     if (!result) { free(buffer); }
@@ -60,7 +61,7 @@ static void internalPostToMainWindow(_In_ wchar_t* buffer, _In_ UINT whichContro
 
 
 static SRWLOCK appLogPrintRWLock = SRWLOCK_INIT; // Read-write lock.
-void appLogPrint(const wchar_t* message, UINT whichControl)
+void appLogPrint(const char* message, UINT whichControl)
 {
     if (!whichControl) return;
 
@@ -99,31 +100,31 @@ void appLogPrint(const wchar_t* message, UINT whichControl)
     if (!message) return;
 
     // Calculate buffer size.
-    size_t len = wcslen(message);
+    size_t len = strlen(message);
 
     if (!len) return;
 
-    // swprintf_s and wcscpy_s might need to add a null termination '\0', 1 wchars.
+    // sprintf_s and strcpy_s might need to add a null termination '\0', 1 chars.
     len += 1;
 
     // For richEditConsole, we will also add "99999: ".
-    if (whichControl == APP_LOG_TO_CONSOLE) len += wcslen(APP_LOG_CONSOLE_PREFIX);
+    if (whichControl == APP_LOG_TO_CONSOLE) len += strlen(APP_LOG_CONSOLE_PREFIX);
 
     // ALLOCATION STRATEGY: Asynchronous Ownership Transfer.
     // The heap-allocated buffer is passed to the UI thread via PostMessage (lParam).
     // The receiving window procedure (windowMessagesCallback) assumes full ownership
     // and is responsible for calling free() after processing.
-    wchar_t* buffer = (wchar_t*)malloc(sizeof(wchar_t) * len);
+    char* buffer = malloc(len);
     if (!buffer) return; // Out of memory
 
-    // For richEditConsole, we will also add "99999: \r\n", 9 wchars.
+    // For richEditConsole, we will also add "99999: \r\n", 9 chars.
     if (whichControl == APP_LOG_TO_CONSOLE)
     {
-        swprintf_s(buffer, len, L"%s%s", APP_LOG_CONSOLE_PREFIX, message);
+        sprintf_s(buffer, len, "%s%s", APP_LOG_CONSOLE_PREFIX, message);
     }
     else
     {
-        wcscpy_s(buffer, len, message);
+        strcpy_s(buffer, len, message);
     }
 
     // If mainWindowHWND is ready to receive messages.
@@ -166,22 +167,22 @@ void appLogPrintInt(int64_t number, UINT whichControl)
 
     if (!mainWindowHWND) return;
 
-	// Max we can have is "-9223372036854775808\0", 21 wchars.
-	wchar_t integerMaxBuffer[21] = { };
-	swprintf_s(integerMaxBuffer, _countof(integerMaxBuffer), L"%lld", number);
-	appLogPrint((const wchar_t*)integerMaxBuffer, whichControl);
+	// Max we can have is "-9223372036854775808\0", 21 chars.
+	char integerMaxBuffer[21] = { };
+	sprintf_s(integerMaxBuffer, sizeof(integerMaxBuffer), "%lld", number);
+	appLogPrint((const char*)integerMaxBuffer, whichControl);
 }
 
 void appLogSetFormatting(HWND hRichEditControl)
 {
-	CHARFORMATW monospaceCustomFont = { };
-	monospaceCustomFont.cbSize = sizeof(CHARFORMATW);
+	CHARFORMATA monospaceCustomFont = { };
+	monospaceCustomFont.cbSize = sizeof(CHARFORMATA);
 	monospaceCustomFont.dwMask = CFM_COLOR | CFM_FACE | CFM_SIZE;
 	monospaceCustomFont.yHeight = 200;
 	monospaceCustomFont.crTextColor = MAIN_WINDOW_WHITE_TXT;
-	const wchar_t *szFaceName = L"Consolas";
-	wcscpy_s(monospaceCustomFont.szFaceName, _countof(monospaceCustomFont.szFaceName), szFaceName);
-    SendMessageW(hRichEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
+	const char *szFaceName = "Consolas";
+	strcpy_s(monospaceCustomFont.szFaceName, sizeof(monospaceCustomFont.szFaceName), szFaceName);
+    SendMessageA(hRichEditControl, EM_SETCHARFORMAT, (WPARAM)SCF_SELECTION, (LPARAM)&monospaceCustomFont);
 }
 
 
@@ -191,51 +192,51 @@ void appLogErrorSetup(bool consoleAvailableArg)
     consoleAvailable = consoleAvailableArg;
 }
 
-static wchar_t* internalGetSysErrorString(DWORD errorCode)
+static char* internalGetSysErrorString(DWORD errorCode)
 {
     if (errorCode == 0) return NULL;
-    wchar_t* buffer = NULL;
-    FormatMessageW(
+    char* buffer = NULL;
+    FormatMessageA(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, errorCode, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPWSTR)&buffer, 0, NULL
+        (PSTR)&buffer, 0, NULL
     );
     return buffer;
 }
 
-void appLogError(LPCWSTR message)
+void appLogError(PCSTR message)
 {
     DWORD errCode = GetLastError(); 
-    wchar_t* sysMsg = internalGetSysErrorString(errCode);
+    char* sysMsg = internalGetSysErrorString(errCode);
 
     if (consoleAvailable)
     {
-        fwprintf(stderr, L"[ERROR] %s", message);
-        if (sysMsg) fwprintf(stderr, L"\n\tSystem Code %lu: %ls", errCode, sysMsg);
-        fwprintf(stderr, L"\n");
+        fprintf(stderr, "[ERROR] %s", message);
+        if (sysMsg) fprintf(stderr, "\n\tSystem Code %lu: %s", errCode, sysMsg);
+        fprintf(stderr, "\n");
     }
     else
     {
-        wchar_t* fullBuf = NULL;
+        char* fullBuf = NULL;
         
         if (sysMsg)
         {
             // 100 wchars is sufficient for the overhead
-            size_t len = wcslen(message) + wcslen(sysMsg) + 100; 
-            fullBuf = (wchar_t*)malloc(len * sizeof(wchar_t));
-            if (fullBuf) swprintf_s(fullBuf, len, L"%s\n\nSystem Error (%lu):\n%s", message, errCode, sysMsg);
+            size_t len = strlen(message) + strlen(sysMsg) + 100; 
+            fullBuf = (char*)malloc(len * sizeof(char));
+            if (fullBuf) sprintf_s(fullBuf, len, "%s\n\nSystem Error (%lu):\n%s", message, errCode, sysMsg);
         }
 
         // Display the error.
         if (fullBuf)
         {
-            MessageBoxW(NULL, fullBuf, L"Minifier 4: ERROR", MB_OK | MB_ICONERROR); // Fixed semicolon
+            MessageBoxA(NULL, fullBuf, "Minifier 4: ERROR", MB_OK | MB_ICONERROR); // Fixed semicolon
             free(fullBuf);
         } 
         else
         {     
             // Fallback if malloc failed or no system message existed.
-            MessageBoxW(NULL, message, L"Minifier 4: ERROR", MB_OK | MB_ICONERROR);
+            MessageBoxA(NULL, message, "Minifier 4: ERROR", MB_OK | MB_ICONERROR);
         }
     }
 

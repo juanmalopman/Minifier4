@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include "html.h"
 #include "parser_common.h"
 #include "main_window.h"
@@ -55,7 +56,7 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
         ChildThreads* temp = realloc(*pChildThreads, nThreadBlock * ((iChildThread / nThreadBlock) + 1) * sizeof(ChildThreads));
         if (!temp)
         {
-            appLogError(L"Failed to allocate memory for helper CSS or JS thread with malloc().");
+            appLogError("Failed to allocate memory for helper CSS or JS thread with malloc().");
             return false;
         }
         *pChildThreads = temp;
@@ -92,7 +93,7 @@ static bool internalSpawnHelperThread(_In_ int iChildThread, _Inout_ ChildThread
 
     if (!pChildThreads[iChildThread].hThread)
     {
-        appLogError(L"Failed to spawn helper thread.");
+        appLogError("Failed to spawn helper thread.");
         return false;
     }
 
@@ -205,25 +206,25 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
 
             if (!_strnicmp(&pD[i], styleTag, sizeof(styleTag) - 1))
             {
-                appLogPrint(L"Inline CSS found.", APP_LOG_TO_CONSOLE);
+                appLogPrint("Inline CSS found.", APP_LOG_TO_CONSOLE);
                 i += sizeof(styleTag) - 1;
                 startIndex = i;
             }
             else if (!_strnicmp(&pD[i], scriptTag, sizeof(scriptTag) - 1))
             {
-                appLogPrint(L"Inline JS found.", APP_LOG_TO_CONSOLE);
+                appLogPrint("Inline JS found.", APP_LOG_TO_CONSOLE);
                 i += sizeof(scriptTag) - 1;
                 startIndex = i;
             }
             else if (!_strnicmp(&pD[i], headEndTag, sizeof(headEndTag) - 1))
             {
-                appLogPrint(L"Head end found.", APP_LOG_TO_CONSOLE);
+                appLogPrint("Head end found.", APP_LOG_TO_CONSOLE);
                 ctx->iCSS = ctx->o;
                 goto doDefault;
             }
             else if (!_strnicmp(&pD[i], bodyEndTag, sizeof(bodyEndTag) - 1))
             {
-                appLogPrint(L"Body end found.", APP_LOG_TO_CONSOLE);
+                appLogPrint("Body end found.", APP_LOG_TO_CONSOLE);
                 ctx->iJS = ctx->o;
                 goto doDefault;
             }
@@ -260,7 +261,7 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
 
             if (i == len - 1)
             {
-                appLogPrint(L"ERROR: </style> or </script> tag never found.", APP_LOG_TO_CONSOLE);
+                appLogPrint("ERROR: </style> or </script> tag never found.", APP_LOG_TO_CONSOLE);
                 break;
             }
 
@@ -269,7 +270,7 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
             buffer = malloc(bufferLen + 1); // +1 for null termination.
             if (!buffer)
             {
-                appLogError(L"Failed to allocate memory for inline CSS or JS with malloc().");
+                appLogError("Failed to allocate memory for inline CSS or JS with malloc().");
                 break;
             }
             memcpy(buffer, &pD[startIndex], bufferLen);
@@ -322,7 +323,7 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
 
         if (waitResult == WAIT_TIMEOUT)
         {
-            appLogError(L"ERROR: Helper threads not done processing 3 seconds later.");
+            appLogError("ERROR: Helper threads not done processing 3 seconds later.");
             // TODO: Terminate them.
             free(pD);
             *pO = nullptr;
@@ -339,7 +340,7 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
     *pO = malloc(*pTotalLen);
     if (!*pO)
     {
-        appLogError(L"Failed to allocate memory for entire output.");
+        appLogError("Failed to allocate memory for entire output.");
         free(pD);
         *pO = nullptr;
         *pTotalLen = 0;
@@ -406,7 +407,7 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
     char* pD = parserCommonGetPointerToUTF8(argsStack.data, &len, argsStack.isPath);
     if (!pD)
     {
-        appLogPrint(L"HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
+        appLogPrint("HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
         parserCommonFinished(pStateGUI, 0, 0);
         return 0;
     }

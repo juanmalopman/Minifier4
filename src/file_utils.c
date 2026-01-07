@@ -5,43 +5,45 @@
 
 #include <windows.h>
 #include <stdint.h>
-#include <wchar.h>
+#include <stdio.h>
+#include <string.h>
 #include "file_utils.h"
 #include "app_logging.h"
 #include <shlobj.h> // To get AppData PATH and SHCreateDirectoryExW
-#include <shlwapi.h> // PathCombineW(), PathRemoveFileSpecW()
+#include <shlwapi.h> // PathCombineA(), PathRemoveFileSpecA()
 
 //
 // FUNCTIONS
 //
 
-bool fileUtilsGetAppDataPath(PWSTR path)
+bool fileUtilsGetAppDataPath(PSTR path)
 {
-    PWSTR tmpPath = nullptr;
-    HRESULT hr = SHGetKnownFolderPath( &FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &tmpPath );
+    PWSTR tmpPathWide = nullptr;
+    HRESULT hr = SHGetKnownFolderPath( &FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &tmpPathWide );
+    char tmpPath[MAX_PATH] = { };
+    size_t convertedChars = 0;
+    wcstombs_s(&convertedChars, tmpPath, MAX_PATH, tmpPathWide, _TRUNCATE);
+    CoTaskMemFree(tmpPathWide); // WinAPI requires us to free the memory allocated by the Shell.
 
     if (hr != S_OK)
     {
-    	appLogError(L"Error getting AppData PATH.");
+    	appLogError("Error getting AppData PATH.");
     	return false;
     }
 
-    PathCombineW(path, tmpPath, L"Minifier4");
-
-    // WinAPI requires us to free the memory allocated by the Shell.
-    CoTaskMemFree(tmpPath);
+    PathCombineA(path, tmpPath, "Minifier4");
 
     // Check Minifier4 exists and is a folder.
-    DWORD dwAttrib = GetFileAttributesW(path);
+    DWORD dwAttrib = GetFileAttributesA(path);
     if (dwAttrib == INVALID_FILE_ATTRIBUTES)
     {
     	// Create "Minifier4" folder.
-	 	if (CreateDirectoryW(path, nullptr)) return true;
+	 	if (CreateDirectoryA(path, nullptr)) return true;
     }
 
 	if (!(dwAttrib & FILE_ATTRIBUTE_DIRECTORY))
 	{
-		appLogError(L"ERROR: A file named Minifier4 is in AppData\\Local. Can't create Minifier4 folder.");
+		appLogError("ERROR: A file named Minifier4 is in AppData\\Local. Can't create Minifier4 folder.");
 		return false;
 	}
 
@@ -49,21 +51,21 @@ bool fileUtilsGetAppDataPath(PWSTR path)
     return  true;
 }
 
-bool fileUtilsSaveToFile(LPCWSTR fullPath, LPCVOID buffer, DWORD len)
+bool fileUtilsSaveToFile(PCSTR fullPath, LPCVOID buffer, DWORD len)
 {
 	// Create all intermediate directories if they don't exist.
-    wchar_t folderPath[MAX_PATH];
-    if (wcscpy_s(folderPath, MAX_PATH, fullPath)) return false;
-    PathRemoveFileSpecW(folderPath);
+    char folderPath[MAX_PATH];
+    if (strcpy_s(folderPath, MAX_PATH, fullPath)) return false;
+    PathRemoveFileSpecA(folderPath);
 
     // SHCreateDirectoryExW creates the full path recursively (mkdir -p).
-    int result = SHCreateDirectoryExW(NULL, folderPath, NULL);
+    int result = SHCreateDirectoryExA(NULL, folderPath, NULL);
 
     // Check for errors but let CreateFile try anyway in case it's a weird permission issue or root drive.
-    if (result != ERROR_SUCCESS && result != ERROR_FILE_EXISTS && result != ERROR_ALREADY_EXISTS) appLogError(L"Error creating intermediate directories.");
+    if (result != ERROR_SUCCESS && result != ERROR_FILE_EXISTS && result != ERROR_ALREADY_EXISTS) appLogError("Error creating intermediate directories.");
 
 	HANDLE hFileToWrite = nullptr;
-	hFileToWrite = CreateFileW(
+	hFileToWrite = CreateFileA(
 		fullPath,
 		GENERIC_WRITE,
 		FILE_SHARE_DELETE |
@@ -78,7 +80,7 @@ bool fileUtilsSaveToFile(LPCWSTR fullPath, LPCVOID buffer, DWORD len)
 	// Chequea el éxito de la función anterior.
 	if (hFileToWrite == INVALID_HANDLE_VALUE)
 	{
-		appLogError(L"Error creating file with CreateFileW().");
+		appLogError("Error creating file with CreateFileA().");
 		return false;
 	}
 
@@ -88,14 +90,14 @@ bool fileUtilsSaveToFile(LPCWSTR fullPath, LPCVOID buffer, DWORD len)
 	DWORD writtenCount = 0; // Bytes effectively written.
 	if (!WriteFile( hFileToWrite, buffer, len, &writtenCount, NULL ))
 	{
-		appLogError(L"Error writing file with WriteFile().");
+		appLogError("Error writing file with WriteFile().");
 	}
  
-	if (!CloseHandle(hFileToWrite)) appLogError(L"Error closing file handle with CloseHandle().");
+	if (!CloseHandle(hFileToWrite)) appLogError("Error closing file handle with CloseHandle().");
 
 	if (writtenCount != len)
 	{
-		appLogError(L"Bytes written to the desired file were less than specified.");
+		appLogError("Bytes written to the desired file were less than specified.");
 		return false;
 	}
 
@@ -146,7 +148,7 @@ void internalDetectCodePage(_In_ void* buffer, _In_ size_t length, _Out_ UINT* o
     }
 
     // 4. UTF-8 Strict Heuristic with Null Check.
-    int res = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (LPCSTR)buffer, testLen, NULL, 0);
+    int res = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (PCSTR)buffer, testLen, NULL, 0);
     
     if (res > 0)
     {
@@ -179,11 +181,11 @@ void internalDetectCodePage(_In_ void* buffer, _In_ size_t length, _Out_ UINT* o
     }
 }
 
-bool fileUtilsReadFromFile(LPCWSTR fullPath, UINT* codePage, void** outBuffer, size_t* outLen)
+bool fileUtilsReadFromFile(PCSTR fullPath, UINT* codePage, void** outBuffer, size_t* outLen)
 {
 
 	HANDLE hFileToRead = nullptr;
-	hFileToRead = CreateFileW(
+	hFileToRead = CreateFileA(
 		fullPath,
 		GENERIC_READ, // Read only access.
 		FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, // Share with any other app concurrently.
@@ -202,14 +204,14 @@ bool fileUtilsReadFromFile(LPCWSTR fullPath, UINT* codePage, void** outBuffer, s
 	LARGE_INTEGER fileSize = { };
 	if (!GetFileSizeEx(hFileToRead, &fileSize))
 	{
-		appLogError(L"Error getting content size in bytes using GetFileSizeEx().");
+		appLogError("Error getting content size in bytes using GetFileSizeEx().");
 		CloseHandle(hFileToRead);
 		return false;
 	}
 
 	if(!fileSize.QuadPart)
 	{
-		appLogError(L"Error: Content size returned from GetFileSizeEx() is 0 bytes.");
+		appLogError("Error: Content size returned from GetFileSizeEx() is 0 bytes.");
 		CloseHandle(hFileToRead);
 		return false;
 	}
@@ -217,14 +219,14 @@ bool fileUtilsReadFromFile(LPCWSTR fullPath, UINT* codePage, void** outBuffer, s
     // Allocate Memory.
     if (sizeof(size_t) < 8 && fileSize.HighPart != 0)
     {
-    	appLogError(L"Error: 32-bit system. Can't allocate enough memory with malloc for the file to be read.");
+    	appLogError("Error: 32-bit system. Can't allocate enough memory with malloc for the file to be read.");
         CloseHandle(hFileToRead);
         return false;
     } 
     void* buffer = malloc(fileSize.QuadPart);
     if (!buffer)
     {
-    	appLogError(L"Error: Couldn't allocate memory with malloc for the file to be read.");
+    	appLogError("Error: Couldn't allocate memory with malloc for the file to be read.");
         CloseHandle(hFileToRead);
         return false;
     }
@@ -232,7 +234,7 @@ bool fileUtilsReadFromFile(LPCWSTR fullPath, UINT* codePage, void** outBuffer, s
     DWORD bytesRead = 0;
     if (!ReadFile(hFileToRead, buffer, (DWORD)fileSize.QuadPart, &bytesRead, nullptr))
     {
-    	appLogError(L"Error: Couldn't read file with ReadFile().");
+    	appLogError("Error: Couldn't read file with ReadFile().");
         free(buffer);
         CloseHandle(hFileToRead);
         return false;

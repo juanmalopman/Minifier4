@@ -89,7 +89,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 # shlwapi is for path strings handling and editing
 # shell32 is for SHCreateDirectoryExW (Create directories recursively)
 target_link_libraries(${PROJECT_NAME} dwmapi uxtheme comctl32 shcore shlwapi shell32)
-add_compile_definitions(UNICODE _UNICODE)
 
 # --- Convert /miniCfgID.bin path to C-safe format (forward slashes) ---
 file(TO_CMAKE_PATH "${BUILD_ID_FILE}" BUILD_ID_PATH_SAFE)
@@ -131,6 +130,7 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         -Wextra
         -pedantic
         $<$<CONFIG:Release>:-O3>
+        $<$<CONFIG:Debug>:-g -O0>
         # Attempt C23 support
         -std=c23
     )
@@ -144,7 +144,7 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         )
     else()
         # Headers need no linking.
-        target_link_options(${PROJECT_NAME} PRIVATE -static -static-libgcc -municode) 
+        target_link_options(${PROJECT_NAME} PRIVATE -static -static-libgcc) 
     endif() 
 endif()
 

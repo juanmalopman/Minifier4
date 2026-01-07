@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <shlwapi.h> // StrTrimW
 #include "parser_common.h"
 #include "app_logging.h"
@@ -21,11 +22,11 @@
 // CONFIGURATION CONSTANTS
 //
 
-static const wchar_t* const prohibitedNamesJS[] = {L"do", L"if", L"in", L"for" };
-static constexpr wchar_t LETTERS[] = L"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-static constexpr size_t LETTERS_CNT = _countof(LETTERS) - 1;
-static constexpr wchar_t ALPHANUM[] = L"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-static constexpr size_t ALPHANUM_CNT = _countof(ALPHANUM) - 1;
+static const char* const prohibitedNamesJS[] = {"do", "if", "in", "for" };
+static constexpr char LETTERS[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+static constexpr size_t LETTERS_CNT = sizeof(LETTERS) - 1;
+static constexpr char ALPHANUM[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+static constexpr size_t ALPHANUM_CNT = sizeof(ALPHANUM) - 1;
 
 //
 // STRUCTS
@@ -34,10 +35,10 @@ static constexpr size_t ALPHANUM_CNT = _countof(ALPHANUM) - 1;
 // Hold the shuffled (and non shuffled) alfabet to generate mangled names.
 typedef struct NameGenerator
 {
-    wchar_t startWchars[LETTERS_CNT]; // a-z, A-Z
-    wchar_t otherWchars[ALPHANUM_CNT];   // a-z, A-Z, 0-9, -, _
-    wchar_t randStartWchars[LETTERS_CNT]; // a-z, A-Z
-    wchar_t randOtherWchars[ALPHANUM_CNT];   // a-z, A-Z, 0-9, -, _
+    char startWchars[LETTERS_CNT]; // a-z, A-Z
+    char otherWchars[ALPHANUM_CNT];   // a-z, A-Z, 0-9, -, _
+    char randStartWchars[LETTERS_CNT]; // a-z, A-Z
+    char randOtherWchars[ALPHANUM_CNT];   // a-z, A-Z, 0-9, -, _
 } NameGenerator;
 
 //
@@ -83,7 +84,7 @@ static char* internalConvertToUTF8(_Inout_ void* rawData, _Inout_ size_t* pLen, 
     // WinAPI Limitation: The file must not be larger than 2GB (INT_MAX) for MultiByteToWideChar.
     if (*pLen > (size_t)INT_MAX)
     {
-        appLogError(L"Error: Input file too large (> 2GB) for encoding conversion.");
+        appLogError("Error: Input file too large (> 2GB) for encoding conversion.");
         free(rawData);
         return nullptr;
     }
@@ -170,7 +171,7 @@ static char* internalConvertToUTF8(_Inout_ void* rawData, _Inout_ size_t* pLen, 
 
     if (!utf8Data)
     {
-        appLogError(L"Error: Encoding conversion failed.");
+        appLogError("Error: Encoding conversion failed.");
         return nullptr;
     }
 
@@ -188,9 +189,9 @@ char* parserCommonGetPointerToUTF8(char* data, size_t* pLen, bool isPath)
     // Scenario 1: "data" is a file path in the stack. We must read it.
     if (isPath)
     {
-        if (!fileUtilsReadFromFile((wchar_t*)data, &codePage, &rawBuffer, pLen))
+        if (!fileUtilsReadFromFile((char*)data, &codePage, &rawBuffer, pLen))
         {
-            appLogPrint(L"Couldn't open specified input file.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Couldn't open specified input file.", APP_LOG_TO_CONSOLE);
             return nullptr;
         }
     }
@@ -220,7 +221,7 @@ static void internalSpawnParsingThread(_In_ StateGUI* pStateGUI, _In_ int extens
     
     if (!args)
     {
-        appLogError(L"Couldn't allocate memory for the \"ParsingThreadArgs\" struct with malloc() to spawn a thread.");
+        appLogError("Couldn't allocate memory for the \"ParsingThreadArgs\" struct with malloc() to spawn a thread.");
         return;
     }
 
@@ -251,18 +252,18 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
 {
     MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
 
-    wchar_t inputPathOnly[MAX_PATH];
-    wcscpy_s(inputPathOnly, MAX_PATH, pMiniCfg->inPath);
-    PathRemoveFileSpecW(inputPathOnly); // Destructively splices inputPathOnly.
-    wchar_t* inputFilename = PathFindFileNameW(pMiniCfg->inPath); // Returns a pointer to an index of pMiniCfg->inPath.
-    wchar_t* inputExtension = PathFindExtensionW(inputFilename); // Returns a pointer to an index of pMiniCfg->inPath.
+    char inputPathOnly[MAX_PATH];
+    strcpy_s(inputPathOnly, MAX_PATH, pMiniCfg->inPath);
+    PathRemoveFileSpecA(inputPathOnly); // Destructively splices inputPathOnly.
+    char* inputFilename = PathFindFileNameA(pMiniCfg->inPath); // Returns a pointer to an index of pMiniCfg->inPath.
+    char* inputExtension = PathFindExtensionA(inputFilename); // Returns a pointer to an index of pMiniCfg->inPath.
 
     if (!inputPathOnly[0] || !inputFilename[0] || !inputExtension[0]) return false;
 
     int extension = fExtInvalid;
-    if (!_wcsicmp(inputExtension, L".html")) extension = fExtHTML;
-    else if (!_wcsicmp(inputExtension, L".css")) extension = fExtCSS;
-    else if (!_wcsicmp(inputExtension, L".js")) extension = fExtJS;
+    if (!_stricmp(inputExtension, ".html")) extension = fExtHTML;
+    else if (!_stricmp(inputExtension, ".css")) extension = fExtCSS;
+    else if (!_stricmp(inputExtension, ".js")) extension = fExtJS;
 
     // See if extension matches radio button selection HTML vs CSS vs JS vs auto
     if (pMiniCfg->inputType == radioButtonAutodetect || pMiniCfg->inputType == extension)
@@ -271,12 +272,12 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
         return true;
     }
     
-    appLogPrint(L"Input console path file extension not valid.", APP_LOG_TO_CONSOLE);
+    appLogPrint("Input console path file extension not valid.", APP_LOG_TO_CONSOLE);
     return false;
 }
 
 // Helper: Checks if a string is non-null and not empty.
-static inline bool internalIsValidString(_In_ const wchar_t* str)
+static inline bool internalIsValidString(_In_ const char* str)
 {
     return (str != nullptr && str[0] != L'\0');
 }
@@ -284,24 +285,24 @@ static inline bool internalIsValidString(_In_ const wchar_t* str)
 // Helper: Safely removes a specific directory segment from a path.
 // Returns true if the segment was found and removed, false otherwise.
 // Note: 'dest' and 'src' must NOT overlap.
-static bool internalStripPathSegment(_Out_ wchar_t* dest, _In_ size_t destSize, _In_ const wchar_t* src, _In_ const wchar_t* segment)
+static bool internalStripPathSegment(_Out_ char* dest, _In_ size_t destSize, _In_ const char* src, _In_ const char* segment)
 {
     if (!dest || !src || !segment || !destSize) return false;
 
-    // Safety: Protect against overlapping buffers which wmemcpy_s does not support.
+    // Safety: Protect against overlapping buffers which memcpy_s does not support.
     if (dest == src) return false;
 
-    size_t segLen = wcslen(segment);
-    const wchar_t* pMatch = src;
+    size_t segLen = strlen(segment);
+    const char* pMatch = src;
     
     // Iterate through occurrences of 'segment' to find a whole-word match.
-    while ((pMatch = wcsstr(pMatch, segment)) != nullptr)
+    while ((pMatch = strstr(pMatch, segment)) != nullptr)
     {
         // 1. Validate Preceding Character (Start of string or Path Separator).
         bool startOk = (pMatch == src) || (pMatch[-1] == L'\\') || (pMatch[-1] == L'/');
 
         // 2. Validate Following Character (End of string or Path Separator).
-        wchar_t nextChar = pMatch[segLen];
+        char nextChar = pMatch[segLen];
         bool endOk = (nextChar == L'\0') || (nextChar == L'\\') || (nextChar == L'/');
 
         if (startOk && endOk)
@@ -311,10 +312,10 @@ static bool internalStripPathSegment(_Out_ wchar_t* dest, _In_ size_t destSize, 
             if (prefixLen >= destSize) return false;
 
             // Copy the prefix.
-            if (wmemcpy_s(dest, destSize, src, prefixLen) != 0) return false;
+            if (memcpy_s(dest, destSize, src, prefixLen) != 0) return false;
             dest[prefixLen] = L'\0';
 
-            const wchar_t* rest = pMatch + segLen;
+            const char* rest = pMatch + segLen;
 
             // Logic to remove double separators
             if (prefixLen > 0 && (dest[prefixLen - 1] == L'\\' || dest[prefixLen - 1] == L'/') && 
@@ -327,7 +328,7 @@ static bool internalStripPathSegment(_Out_ wchar_t* dest, _In_ size_t destSize, 
                 rest++;
             }
 
-            return (wcscat_s(dest, destSize, rest) == 0);
+            return (strcat_s(dest, destSize, rest) == 0);
         }
         pMatch++;
     }
@@ -340,8 +341,8 @@ static void internalSaveAsFile(_In_ MiniCfg* pMiniCfg, _In_ char* minified, _In_
     // 1. Output Strategy Check.
     if (pMiniCfg->outOpt == radioButtonNoOutFile) return;
 
-    wchar_t outputFullPath[MAX_PATH] = { };
-    wchar_t tempPath[MAX_PATH] = { };
+    char outputFullPath[MAX_PATH] = { };
+    char tempPath[MAX_PATH] = { };
 
     // 2. Handle Directory Logic.
     if (pMiniCfg->outOpt == radioButtonOutFilePath)
@@ -349,52 +350,52 @@ static void internalSaveAsFile(_In_ MiniCfg* pMiniCfg, _In_ char* minified, _In_
         // Must have a valid custom output path.
         if (!internalIsValidString(pMiniCfg->outPath))
         {
-            appLogPrint(L"Custom output path null or invalid.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Custom output path null or invalid.", APP_LOG_TO_CONSOLE);
             return;
         }
-        wcscpy_s(outputFullPath, MAX_PATH, pMiniCfg->outPath);
+        strcpy_s(outputFullPath, MAX_PATH, pMiniCfg->outPath);
     }
     else if (pMiniCfg->outOpt == radioButtonOutFileStrip)
     {
         if (!internalIsValidString(pMiniCfg->stripSeg))
         {
-            appLogPrint(L"Segment to strip from output path null or invalid.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Segment to strip from output path null or invalid.", APP_LOG_TO_CONSOLE);
             return;
         }
 
         // Use temp buffer for manipulation.
-        wcscpy_s(tempPath, MAX_PATH, pMiniCfg->inPath);
+        strcpy_s(tempPath, MAX_PATH, pMiniCfg->inPath);
         
         // Remove filename destructively to get the directory.
-        PathRemoveFileSpecW(tempPath);
+        PathRemoveFileSpecA(tempPath);
 
         // Attempt to strip the segment.
         if (!internalStripPathSegment(outputFullPath, MAX_PATH, tempPath, pMiniCfg->stripSeg))
         {
-            appLogPrint(L"Failed to find the segment to strip from output path.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Failed to find the segment to strip from output path.", APP_LOG_TO_CONSOLE);
             return;
         }
     }
 
     // 3. Handle Filename Logic.
-    wchar_t fileNameToUse[MAX_PATH];
+    char fileNameToUse[MAX_PATH];
 
     if (pMiniCfg->outFilename)
     {
         if (!internalIsValidString(pMiniCfg->outFile)) 
         {
-            appLogPrint(L"Custom filename null or invalid.", APP_LOG_TO_CONSOLE);
+            appLogPrint("Custom filename null or invalid.", APP_LOG_TO_CONSOLE);
             return;
         }
-        wcscpy_s(fileNameToUse, MAX_PATH, pMiniCfg->outFile);
+        strcpy_s(fileNameToUse, MAX_PATH, pMiniCfg->outFile);
     }
     else
     {
-        wcscpy_s(fileNameToUse, MAX_PATH, PathFindFileNameW(pMiniCfg->inPath));
+        strcpy_s(fileNameToUse, MAX_PATH, PathFindFileNameA(pMiniCfg->inPath));
     }
 
     // Combine Directory + Filename.
-    PathCombineW(outputFullPath, outputFullPath, fileNameToUse);
+    PathCombineA(outputFullPath, outputFullPath, fileNameToUse);
 
     // Save file.
     fileUtilsSaveToFile(outputFullPath, minified, len);
@@ -405,7 +406,7 @@ void parserCommonFinished(StateGUI* pStateGUI, char* minified, size_t len)
     MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
     pMiniCfg->currentlyParsing = false;
     mainWindowEnableControls(pStateGUI, true); // Reenable right menu controls.
-    appLogPrint(L"Minification finished.", APP_LOG_TO_CONSOLE);
+    appLogPrint("Minification finished.", APP_LOG_TO_CONSOLE);
 
     // If headless, do the outputting and terminate the app.
     if (pMiniCfg->flagHeadless)
@@ -415,17 +416,17 @@ void parserCommonFinished(StateGUI* pStateGUI, char* minified, size_t len)
             internalSaveAsFile(pMiniCfg, minified, len);
             free(minified);
         }
-        PostMessageW(pStateGUI->hwnds[mainWindow], WM_CLOSE, 0, 0); 
+        PostMessageA(pStateGUI->hwnds[mainWindow], WM_CLOSE, 0, 0); 
     }
     else
     {
         if (minified)
         {
             // Update fallback path.
-            wcscpy_s(pMiniCfg->prevPath, MAX_PATH, pMiniCfg->inPath);
+            strcpy_s(pMiniCfg->prevPath, MAX_PATH, pMiniCfg->inPath);
             
             // Print to the output rich edit control.
-            mainWindowReplaceRichTextA(pStateGUI->hwnds[richEditOutput], minified);
+            mainWindowReplaceRichText(pStateGUI->hwnds[richEditOutput], minified);
 
             // Do the outputting.
             internalSaveAsFile(pMiniCfg, minified, len);
@@ -438,14 +439,14 @@ void parserCommonFinished(StateGUI* pStateGUI, char* minified, size_t len)
 void parserCommonRun(StateGUI* pStateGUI)
 {
     MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
-    appLogPrint(L"Minification started.", APP_LOG_TO_CONSOLE);
+    appLogPrint("Minification started.", APP_LOG_TO_CONSOLE);
 
     // See if this is headless.
     if (pMiniCfg->flagHeadless)
     {
         if (!pMiniCfg->inPath[0])
         {
-            appLogError(L"Headless mode requested without input file. Aborting minification.");
+            appLogError("Headless mode requested without input file. Aborting minification.");
             return;
         }
         internalSelectFileParser(pStateGUI);
@@ -465,7 +466,7 @@ void parserCommonRun(StateGUI* pStateGUI)
         }
         else
         {
-            appLogError(L"No --input path specified. Aborting minification.");
+            appLogError("No --input path specified. Aborting minification.");
             // In this "still" headless session there can't be no prevPath yet.
             return;
         }
@@ -479,35 +480,34 @@ void parserCommonRun(StateGUI* pStateGUI)
     {
         // Try to get a valid path first.
         bool validPath = false;
-        wchar_t* richInputContent = nullptr;
+        char* richInputContent = nullptr;
         do
         {
             // Allocate memory to get rich edit input contents.
-            size_t bufferSize = (len + 1) * sizeof(wchar_t);
-            richInputContent = (wchar_t*)malloc(bufferSize);
+            richInputContent = malloc(len + 1);
 
             if (!richInputContent)
             {
-                appLogError(L"Error allocating memory for input rich edit control content with malloc().");
+                appLogError("Error allocating memory for input rich edit control content with malloc().");
                 break;
             }
 
             SendMessage(hInputRichEdit, WM_GETTEXT, (WPARAM)(len + 1), (LPARAM)richInputContent);
 
             // Remove starting and trailing whitespaces and return characters.
-            StrTrimW(richInputContent, L" \t\r\n");
+            StrTrimA(richInputContent, " \t\r\n");
 
-            if (wcslen(richInputContent) > MAX_PATH) break; // Process richInputContent as raw console content.
+            if (strlen(richInputContent) > MAX_PATH) break; // Process richInputContent as raw console content.
             
             // See if it's malformed to be a valid path.
-            if (!wcspbrk(richInputContent, L"<>\"|?*\n\r"))
+            if (!strpbrk(richInputContent, "<>\"|?*\n\r"))
             {
-                 if (GetFullPathNameW(richInputContent, 0, richInputContent, NULL)) validPath = true;
+                 if (GetFullPathNameA(richInputContent, 0, richInputContent, NULL)) validPath = true;
             }
 
             if (!validPath) break; // Process richInputContent as raw console content.
 
-            wcscpy_s(pMiniCfg->inPath, MAX_PATH, richInputContent);
+            strcpy_s(pMiniCfg->inPath, MAX_PATH, richInputContent);
             free(richInputContent); // No longer needed.
             
             // Parse the file. If successful, nothing else to do.
@@ -521,31 +521,25 @@ void parserCommonRun(StateGUI* pStateGUI)
             int extension = pMiniCfg->inputType;
             if (extension == radioButtonAutodetect)
             {
-                appLogPrint(L"Auto-detect option works for file paths only. Defaulting to HTML.", APP_LOG_TO_CONSOLE);
+                appLogPrint("Auto-detect option works for file paths only. Defaulting to HTML.", APP_LOG_TO_CONSOLE);
                 extension = radioButtonHTML;
             }
-            size_t finalLen = len * sizeof(wchar_t);
-            char* rawData = internalConvertToUTF8(richInputContent, &finalLen, CP_UTF16LE);
-            if (rawData == nullptr)
-            {
-                free(richInputContent);
-                appLogPrint(L"Error converting raw rich edit input data to UTF8. Aborting minification.", APP_LOG_TO_CONSOLE);
-                return;
-            }
-            internalSpawnParsingThread(pStateGUI, extension, true, rawData, finalLen, false);
+            
+
+            internalSpawnParsingThread(pStateGUI, extension, true, richInputContent, len, false);
             return; // No fallback for raw processing.
         }        
     }
     else
     {
-        appLogPrint(L"No content on input control.", APP_LOG_TO_CONSOLE);
+        appLogPrint("No content on input control.", APP_LOG_TO_CONSOLE);
     }
 
     // See if defaulting is ok.
     if(pMiniCfg->fallbackToPrevFile && pMiniCfg->prevPath[0])
     {
-        appLogPrint(L"Attempting fallback.", APP_LOG_TO_CONSOLE);
-        swprintf_s(pMiniCfg->inPath, MAX_PATH, pMiniCfg->prevPath);
+        appLogPrint("Attempting fallback.", APP_LOG_TO_CONSOLE);
+        sprintf_s(pMiniCfg->inPath, MAX_PATH, pMiniCfg->prevPath);
         if (internalSelectFileParser(pStateGUI)) return;
     }
     
@@ -561,17 +555,17 @@ static NameGenerator* internalInitGenerator()
     QueryPerformanceCounter(&li); // Enough to get different mangling every run of Minifier 4.
     uint64_t seed = (uint64_t)li.QuadPart;
     
-    memcpy(gen.startWchars, LETTERS, LETTERS_CNT * sizeof(wchar_t));
-    memcpy(gen.otherWchars, ALPHANUM, ALPHANUM_CNT * sizeof(wchar_t));
-    memcpy(gen.randStartWchars, LETTERS, LETTERS_CNT * sizeof(wchar_t));
-    memcpy(gen.randOtherWchars, ALPHANUM, ALPHANUM_CNT * sizeof(wchar_t));
+    memcpy(gen.startWchars, LETTERS, LETTERS_CNT);
+    memcpy(gen.otherWchars, ALPHANUM, ALPHANUM_CNT);
+    memcpy(gen.randStartWchars, LETTERS, LETTERS_CNT);
+    memcpy(gen.randOtherWchars, ALPHANUM, ALPHANUM_CNT);
 
     // Shuffle start wchars.
     for (uint8_t i = 0; i < LETTERS_CNT; i++)
     {
         seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17; // Xorshift
         uint8_t r = seed % LETTERS_CNT;
-        wchar_t temp = gen.randStartWchars[i];
+        char temp = gen.randStartWchars[i];
         gen.randStartWchars[i] = gen.randStartWchars[r];
         gen.randStartWchars[r] = temp;
     }
@@ -580,7 +574,7 @@ static NameGenerator* internalInitGenerator()
     for (uint8_t i = 0; i < ALPHANUM_CNT; i++) {
         seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17;
         uint8_t r = seed % ALPHANUM_CNT;
-        wchar_t temp = gen.randOtherWchars[i];
+        char temp = gen.randOtherWchars[i];
         gen.randOtherWchars[i] = gen.randOtherWchars[r];
         gen.randOtherWchars[r] = temp;
     }
@@ -589,12 +583,12 @@ static NameGenerator* internalInitGenerator()
 }
 
 // Helper to check reserved JS words.
-static bool internalNameIsAllowedInJS(_In_ const wchar_t* mangledName)
+static bool internalNameIsAllowedInJS(_In_ const char* mangledName)
 {
     bool nameAllowed = true;
-    for (uint16_t i = 0; i < _countof(prohibitedNamesJS); i++)
+    for (uint16_t i = 0; i < sizeof(prohibitedNamesJS); i++)
     {
-        if (!wcscmp(mangledName, prohibitedNamesJS[i])) nameAllowed = false;
+        if (!strcmp(mangledName, prohibitedNamesJS[i])) nameAllowed = false;
     }
     return nameAllowed;
 }
@@ -604,9 +598,9 @@ static bool internalNameIsAllowedInJS(_In_ const wchar_t* mangledName)
 // Reason is some executions add an offset by means of skippedNameIndexes to future calls.
 // Previously assigned indices may be requested at any time to retrieve the original result.
 static NameGenerator* gen = nullptr;
-static int skippedNameIndexes[_countof(prohibitedNamesJS)] = { };
+static int skippedNameIndexes[sizeof(prohibitedNamesJS)] = { };
 static int namesSkippedCount = 0;
-static int skippedNameIndexesRand[_countof(prohibitedNamesJS)] = { };
+static int skippedNameIndexesRand[sizeof(prohibitedNamesJS)] = { };
 static int namesSkippedCountRand = 0;
 static SRWLOCK getMangledNameRWLock = SRWLOCK_INIT; // Read-write lock.
 static INIT_ONCE onceFlag = INIT_ONCE_STATIC_INIT;
@@ -616,15 +610,15 @@ static BOOL CALLBACK internalGetMangledHelpRunOnce([[maybe_unused]] _In_opt_ PIN
     gen = internalInitGenerator();
     return TRUE;
 }
-void parserCommonGetMangled(int index, wchar_t* buffer, bool rand)
+void parserCommonGetMangled(int index, char* buffer, bool rand)
 {
     // Ensure gen is initialized in a thread-safe way.
     InitOnceExecuteOnce(&onceFlag, internalGetMangledHelpRunOnce, NULL, NULL);
 
     int* activeSkippedNameIndexes = skippedNameIndexes;
     int* activepNamesSkippedCount = &namesSkippedCount;
-    wchar_t* activeStartWchars = gen->startWchars;
-    wchar_t* activeOtherWchars = gen->otherWchars;
+    char* activeStartWchars = gen->startWchars;
+    char* activeOtherWchars = gen->otherWchars;
 
     if (rand)
     {
@@ -681,9 +675,9 @@ void parserCommonGetMangled(int index, wchar_t* buffer, bool rand)
         }
         if (!alreadySkipped)
         {
-            if ((*activepNamesSkippedCount) == _countof(prohibitedNamesJS))
+            if ((*activepNamesSkippedCount) == sizeof(prohibitedNamesJS))
             {
-                appLogError(L"ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
+                appLogError("ERROR: skippedNameIndexes[namesSkippedCount] out of bounds inside getMangledNameByIndex().");
                 index++;
                 continue;
             }

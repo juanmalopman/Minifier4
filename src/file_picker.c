@@ -5,7 +5,8 @@
 
 #include <windows.h>
 #include <stdint.h> // int64_t, uint32_t, etc.
-#include <wchar.h> // swprintf_s, wcslen, etc.
+#include <stdio.h>
+#include <string.h> // sprintf_s, strlen, etc.
 #include <shobjidl.h> // Required for pick folder/file dialogs.
 #include "main_window.h"
 #include "file_picker.h"
@@ -26,7 +27,7 @@ static HRESULT internalInitLibCOM()
     return hr;
 }
 
-static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_writes_z_(MAX_PATH) LPWSTR pathToUpdate)
+static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_writes_z_(MAX_PATH) PSTR pathToUpdate)
 {
     // Resource initialization.
     IFileOpenDialog *pFileOpen = NULL;
@@ -37,7 +38,7 @@ static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_
     HRESULT hr = internalInitLibCOM();
     
     // If COM init fails, return immediately (nothing to uninitialize).
-    if (FAILED(hr)) {  appLogError(L"ERROR: initializeLibraryCOM() failed."); return; }
+    if (FAILED(hr)) {  appLogError("ERROR: initializeLibraryCOM() failed."); return; }
 
     // Execution Loop, single pass, allows 'break' on failure for cleanup.
     do
@@ -51,20 +52,20 @@ static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_
             (void**)&pFileOpen
         );
 
-        if (FAILED(hr)) { appLogError(L"ERROR: CoCreateInstance() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: CoCreateInstance() failed."); break; }
 
         // Get current options.
         DWORD dwOptions;
         hr = IFileOpenDialog_GetOptions(pFileOpen, &dwOptions);
         
-        if (FAILED(hr)) { appLogError(L"ERROR: IFileOpenDialog_GetOptions() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: IFileOpenDialog_GetOptions() failed."); break; }
 
         // Set options.
         dwOptions |= FOS_FORCEFILESYSTEM;
         if (!isFile) dwOptions |= FOS_PICKFOLDERS;
         hr = IFileOpenDialog_SetOptions(pFileOpen, dwOptions);
 
-        if (FAILED(hr)) { appLogError(L"ERROR: IFileOpenDialog_SetOptions() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: IFileOpenDialog_SetOptions() failed."); break; }
 
         // Show the dialog (Modal to owner).
         hr = IFileOpenDialog_Show(pFileOpen, pStateGUI->hwnds[mainWindow]);
@@ -72,20 +73,21 @@ static void internalOpenDialog(_In_ StateGUI* pStateGUI, _In_ bool isFile, _Out_
         // Special Case: User Cancelled. No error popup.
         if (hr == HRESULT_FROM_WIN32(ERROR_CANCELLED)) { break; }
 
-        if (FAILED(hr)) { appLogError(L"ERROR: IFileOpenDialog_Show() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: IFileOpenDialog_Show() failed."); break; }
 
         // Get the result (Shell Item)
         hr = IFileOpenDialog_GetResult(pFileOpen, &pItem);
 
-        if (FAILED(hr)) { appLogError(L"ERROR: IFileOpenDialog_GetResult() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: IFileOpenDialog_GetResult() failed."); break; }
 
         // Get the file system path
         hr = IShellItem_GetDisplayName(pItem, SIGDN_FILESYSPATH, &pszFilePath);
 
-        if (FAILED(hr)) { appLogError(L"ERROR: IShellItem_GetDisplayName() failed."); break; }
+        if (FAILED(hr)) { appLogError("ERROR: IShellItem_GetDisplayName() failed."); break; }
 
         // Success.
-        wcscpy_s(pathToUpdate, MAX_PATH, pszFilePath);        
+        size_t convertedChars = 0;
+        wcstombs_s(&convertedChars, pathToUpdate, MAX_PATH, pszFilePath, _TRUNCATE);        
         mainWindowUpdateControls(pStateGUI);
 
     } while (false); 
