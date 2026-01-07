@@ -16,16 +16,16 @@
 typedef struct ParsingThreadArgs{
     StateGUI* pStateGUI;
     bool mainParsingThread;
-    wchar_t* data;
+    char* data;
     size_t len;
+    bool isPath;
 } ParsingThreadArgs;
 
 //
 // FUNCTION PROTOTYPES
 //
 
-char* parserCommonGetPointerToUTF8(wchar_t* data, size_t* pLen);
-void parserCommonSpawnParsingThread(_In_ StateGUI* pStateGUI, _In_ int extension, _In_ bool mainParsingThread, _In_ wchar_t* data, _In_ size_t len);
+char* parserCommonGetPointerToUTF8( _Inout_ char* data, _Inout_ size_t* pLen, _In_ bool isPath);
 void parserCommonFinished(_Inout_ StateGUI* pStateGUI, _In_ char* minified, _In_ size_t len);
 void parserCommonRun(_Inout_ StateGUI* pStateGUI);
 void parserCommonGetMangled(_In_ int index, _Out_ wchar_t* buffer,_In_ bool rand);

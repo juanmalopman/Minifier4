@@ -11,19 +11,84 @@
 #include "main_window.h"
 #include "minify_config.h"
 #include "app_logging.h"
+#include "css.h"
+#include "js.h"
 
+//
+// STRUCTS
+//
+
+typedef struct ChildThreads
+{
+    ParsingThreadArgs parsingThreadArgs;
+    bool isCSS;
+    HANDLE hThread;
+}ChildThreads;
 
 //
 // FUNCTIONS
 //
+
+static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ ChildThreads** pChildThreads, _In_ int nThreadBlock)
+{
+    // If there's no more memory to store child thread data, allocate.
+    if (iChildThread % (nThreadBlock + 1) == nThreadBlock)
+    {
+        ChildThreads* temp = realloc(*pChildThreads, nThreadBlock * (iChildThread / nThreadBlock) * sizeof(ChildThreads));
+        if (!temp)
+        {
+            appLogError(L"Failed to allocate memory for helper CSS or JS thread with malloc().");
+            return false;
+        }
+        *pChildThreads = temp;
+    }
+    return true;
+}
+
+static void internalQueueHelperThread(_Inout_ int* iChildThread, _Out_ ChildThreads* pChildThreads, _In_ bool isPath, _In_ bool isCSS, _In_ char* buffer, _In_ int bufferLen)
+{
+    pChildThreads[*iChildThread].parsingThreadArgs.pStateGUI = nullptr;
+    pChildThreads[*iChildThread].parsingThreadArgs.mainParsingThread = false;
+    pChildThreads[*iChildThread].parsingThreadArgs.data = buffer;
+    pChildThreads[*iChildThread].parsingThreadArgs.len = bufferLen;
+    pChildThreads[*iChildThread].parsingThreadArgs.isPath = isPath;
+    pChildThreads[*iChildThread].isCSS = isCSS;
+    (*iChildThread)++;
+}
+
+static bool internalSpawnHelperThread(_In_ int iChildThread, _Inout_ ChildThreads* pChildThreads)
+{
+    // Determine what helper thread we need.
+    typedef DWORD WINAPI (*WorkerSpawnThread)(LPVOID lpParam);
+    WorkerSpawnThread selectedFunc = nullptr;
+
+    selectedFunc = pChildThreads[iChildThread].isCSS ? cssSpawnThread : jsSpawnThread;
+    pChildThreads[iChildThread].hThread = CreateThread(
+        NULL,                               // Default security attributes.
+        0,                                  // Default stack size.
+        selectedFunc,                       // The thread to spwan.
+        &(pChildThreads->parsingThreadArgs),// The argument struct.
+        0,                                  // Default creation flags.
+        NULL                                // Don't need the thread ID.
+    );
+
+    if (!pChildThreads[iChildThread].hThread)
+    {
+        appLogError(L"Failed to spawn helper thread.");
+        return false;
+    }
+
+    return true;
+}
 
 DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
 {
     ParsingThreadArgs* args = (ParsingThreadArgs*)lpParam;
     StateGUI* pStateGUI = args->pStateGUI;
     bool mainParsingThread = args->mainParsingThread;
-    wchar_t* data = args->data;
+    char* data = args->data;
     size_t len = args->len;
+    bool isPath = args->isPath;
     free(args);
 
     if (!mainParsingThread) appLogPrint(L"Not mainParsingThread", APP_LOG_TO_CONSOLE);
@@ -31,18 +96,23 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
     // MiniCfg* pMiniCfg = pStateGUI->pMiniCfg;
 
     // Get the pointer we need, to data forwarded or by opening a file, already in UTF-8.
-    char* pD = parserCommonGetPointerToUTF8(data, &len);
+    char* pD = parserCommonGetPointerToUTF8(data, &len, isPath);
     if (!pD)
     {
         appLogPrint(L"HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
         parserCommonFinished(pStateGUI, 0, 0);
     }
 
+    // A list of helper threads to queue.
+    int iChildThread = 0;
+    static constexpr int nThreadBlock = 99;
+    ChildThreads* pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
+
     // Indexes to inject code later or aid parsing.
     size_t iCSS = 0;
-    size_t iFold = 0;
+    [[maybe_unused]] size_t iFold = 0;
     size_t iJS = 0;
-    size_t iError[2] = { };
+    [[maybe_unused]] size_t iError[2] = { };
     size_t lastWasNewline = 0; // When '\n' is found, store the index.
     size_t o = 0; // Output index.
     for (size_t i = 0; i < len; i++ )
@@ -178,6 +248,7 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             // Skip all the content up to next tag.
             bool isCSS = true;
             size_t bufferLen;
+
             for (; i < len; i++)
             {
                 if (pD[i] == '<')
@@ -185,17 +256,25 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
                     if (!_strnicmp(&pD[i], styleEndTag, sizeof(styleEndTag) - 1))
                     {
                         bufferLen = i - startIndex;
-                        i += sizeof(styleEndTag) - 1;
+                        // -1 because of the null termination and -1 because next iteration of the parsing loop will increment i.
+                        i += sizeof(styleEndTag) - 1 - 1;
                         break;
                     }
                     else if (!_strnicmp(&pD[i], scriptEndTag, sizeof(scriptEndTag) - 1))
                     {
                         bufferLen = i - startIndex;
-                        i += sizeof(scriptEndTag) - 1;
+                        // -1 because of the null termination and -1 because next iteration of the parsing loop will increment i.
+                        i += sizeof(scriptEndTag) - 1 - 1;
                         isCSS = false;
                         break;
                     }
                 }
+            }
+
+            if (i == len - 1)
+            {
+                appLogPrint(L"ERROR: </style> or </script> tag never found.", APP_LOG_TO_CONSOLE);
+                break;
             }
 
             // Allocate heap and store the CSS or JS.
@@ -209,20 +288,13 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
             memcpy(buffer, &pD[startIndex], bufferLen);
             buffer[bufferLen] = '\0'; // Null terminate the string.
 
-            // TODO: Spawn the right worker thread. And erase the code under here.
-            int requiredSize = MultiByteToWideChar(CP_UTF8, 0, buffer, -1, nullptr, 0);
-            if (requiredSize > 0)
+            if(!internalAllocateChildThreadStructMem(iChildThread, &pChildThreads, nThreadBlock))
             {
-                wchar_t* wideBuffer = (wchar_t*)malloc(requiredSize * sizeof(wchar_t) - 1);
-                if (wideBuffer)
-                {
-                    MultiByteToWideChar(CP_UTF8, 0, buffer, -1, wideBuffer, requiredSize);
-                    // Use the wide string
-                    if (isCSS) appLogPrint(wideBuffer, APP_LOG_TO_CONSOLE);
-                    free(wideBuffer);
-                }
+                free(buffer);
+                break;
             }
-            free(buffer);
+
+            internalQueueHelperThread(&iChildThread, pChildThreads, false, isCSS, buffer, bufferLen);
 
             break;
         }
@@ -236,11 +308,107 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
         }
     }
 
-    // Ensure null termination without incrementing the index, to avoid written files to be null terminated.
+    // Ensure null termination (without incrementing the index, to avoid written files to be null terminated).
     if (o < len) pD[o] = '\0';
-     
 
-    if (iCSS && iFold && iJS) appLogPrint(L"Avoid unused warnings. Erase this line.", APP_LOG_TO_CONSOLE);
-    parserCommonFinished(pStateGUI, pD, o);
+    // If no helper CSS or JS threads to spawn, we're done.
+    if (!iChildThread)
+    {
+        parserCommonFinished(pStateGUI, pD, o);
+        return 0;
+    }
+
+    // If there's nowhere valid to inject CSS and JS, terminate.
+    if (!iCSS || !iJS || iJS <= iCSS)
+    {
+        free(pD);
+        parserCommonFinished(pStateGUI, nullptr, 0);
+        return 0;
+    }
+
+    // With all the classes and IDs registered, spawn all queued threads.
+    for (int i = 0; i < iChildThread; i++)
+    {
+        internalSpawnHelperThread(i, pChildThreads);
+    }
+
+    // Wait for any helper thread spawned to finish it's work and terminate.
+    if (iChildThread)
+    {
+        HANDLE* handleArray = malloc(iChildThread * sizeof(HANDLE));
+        for (int i = 0; i < iChildThread; i++) handleArray[i] = pChildThreads->hThread;
+        DWORD waitResult = WaitForMultipleObjects(iChildThread, handleArray, TRUE, 3000);
+
+        if (waitResult == WAIT_TIMEOUT)
+        {
+            appLogError(L"ERROR: Helper threads not done processing 3 seconds later.");
+            // TODO: Terminate them.
+        }
+    }
+
+    // See total output len.
+    size_t totalLen = o;
+    for (int i = 0; i < iChildThread; i++) totalLen += pChildThreads->parsingThreadArgs.len;
+
+    // Allocate for the output.
+    char* pO = malloc(totalLen);
+    if (!pO)
+    {
+        appLogError(L"Failed to allocate memory for entire output.");
+        free(pD);
+        parserCommonFinished(pStateGUI, nullptr, 0);
+        return 0;
+    }
+
+    // Tie all helper threads output together.
+    char* pCursor = pO;
+
+    memcpy(pCursor, pD, iCSS); // Copy HTML up to the CSS start.
+    pCursor += iCSS;
+
+    // Copy any CSS.
+    for (int i = 0; i < iChildThread; i++)
+    {
+        if (pChildThreads[i].isCSS)
+        {
+            char* pData = pChildThreads[i].parsingThreadArgs.data;
+            size_t len  = (size_t)pChildThreads[i].parsingThreadArgs.len;
+
+            if (pData != nullptr && len > 0)
+            {
+                memcpy(pCursor, pData, len);
+                pCursor += len;
+            }
+        }
+    }
+
+    size_t lenMiddle = iJS - iCSS;
+    memcpy(pCursor, pD + iCSS, lenMiddle); // Copy HTML up to the JS start.
+    pCursor += lenMiddle;
+
+    // Copy any JS.
+    for (int i = 0; i < iChildThread; i++)
+    {
+        if (!pChildThreads[i].isCSS)
+        {
+            char* pData = pChildThreads[i].parsingThreadArgs.data;
+            size_t len  = (size_t)pChildThreads[i].parsingThreadArgs.len;
+
+            if (pData != nullptr && len > 0)
+            {
+                memcpy(pCursor, pData, len);
+                pCursor += len;
+            }
+        }
+    }
+
+    size_t lenFooter = (size_t)o - iJS;
+    memcpy(pCursor, pD + iJS, lenFooter + 1); // Copy HTML up to the end.
+
+
+    free(pD);
+     
+    parserCommonFinished(pStateGUI, pO, totalLen);
     return 0;
+    
 }

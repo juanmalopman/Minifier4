@@ -178,20 +178,17 @@ static char* internalConvertToUTF8(_Inout_ void* rawData, _Inout_ size_t* pLen, 
     return utf8Data;
 }
 
-char* parserCommonGetPointerToUTF8(wchar_t* data, size_t* pLen)
+char* parserCommonGetPointerToUTF8(char* data, size_t* pLen, bool isPath)
 {
-    // TODO: Document clearly that the programmer must pass "data" to "free()" and pLen == 0; or the opposite.
-    // data pointing to the stack and pLen != 0 will crash the app.
-
     if (!pLen) return nullptr;
 
     void* rawBuffer = nullptr;
-    UINT codePage = CP_UTF16LE; // Default assumption for forwarded data (Windows L"internal string").
+    UINT codePage = CP_UTF8; // Default assumption for forwarded data.
 
-    // Scenario 1: "data" is a file path in the stack (pLen is 0). We must read it.
-    if (*pLen == 0)
+    // Scenario 1: "data" is a file path in the stack. We must read it.
+    if (isPath)
     {
-        if (!fileUtilsReadFromFile(data, &codePage, &rawBuffer, pLen))
+        if (!fileUtilsReadFromFile((wchar_t*)data, &codePage, &rawBuffer, pLen))
         {
             appLogPrint(L"Couldn't open specified input file.", APP_LOG_TO_CONSOLE);
             return nullptr;
@@ -200,7 +197,7 @@ char* parserCommonGetPointerToUTF8(wchar_t* data, size_t* pLen)
     // Scenario 2: "data" is the actual content (forwarded from the UI).
     else
     {
-        rawBuffer = (void*)data;
+        return data;
     }
 
     // Convert (or pass through) to UTF-8
@@ -208,9 +205,9 @@ char* parserCommonGetPointerToUTF8(wchar_t* data, size_t* pLen)
     return internalConvertToUTF8(rawBuffer, pLen, codePage);
 }
 
-void parserCommonSpawnParsingThread(StateGUI* pStateGUI, int extension, bool mainParsingThread, wchar_t* data, size_t len)
+static void internalSpawnParsingThread(_In_ StateGUI* pStateGUI, _In_ int extension, _In_ bool mainParsingThread, _In_ char* data, _In_ size_t len, _In_ bool isPath)
 {
-    // Determine based on extension what function we need.
+    // Determine based on extension what worker thread we need.
     typedef DWORD WINAPI (*WorkerSpawnThread)(LPVOID lpParam);
     WorkerSpawnThread selectedFunc = nullptr;
 
@@ -221,32 +218,33 @@ void parserCommonSpawnParsingThread(StateGUI* pStateGUI, int extension, bool mai
     // Allocate memory for the argument on the heap.
     ParsingThreadArgs* args = (ParsingThreadArgs*)malloc(sizeof(ParsingThreadArgs));
     
-    if (args)
-    {
-        args->pStateGUI = pStateGUI;
-        args->mainParsingThread = mainParsingThread;
-        args->data = data;
-        args->len = len;
-
-        HANDLE hThread = CreateThread(
-            NULL,               // Default security attributes.
-            0,                  // Default stack size.
-            selectedFunc,       // The thread to spwan.
-            args,               // The argument struct.
-            0,                  // Default creation flags.
-            NULL                // Don't need the thread ID.
-        );
-
-        if (hThread) {
-            CloseHandle(hThread); // We don't need to keep the handle open
-        } else {
-            free(args); // Thread creation failed, clean up.
-        }
-    }
-    else
+    if (!args)
     {
         appLogError(L"Couldn't allocate memory for the \"ParsingThreadArgs\" struct with malloc() to spawn a thread.");
+        return;
     }
+
+    args->pStateGUI = pStateGUI;
+    args->mainParsingThread = mainParsingThread;
+    args->data = data;
+    args->len = len;
+    args->isPath = isPath;
+
+    HANDLE hThread = CreateThread(
+        NULL,               // Default security attributes.
+        0,                  // Default stack size.
+        selectedFunc,       // The thread to spwan.
+        args,               // The argument struct.
+        0,                  // Default creation flags.
+        NULL                // Don't need the thread ID.
+    );
+
+    if (hThread) {
+        CloseHandle(hThread); // We don't need to keep the handle open
+    } else {
+        free(args); // Thread creation failed, clean up.
+    }
+
 }
 
 static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
@@ -269,7 +267,7 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
     // See if extension matches radio button selection HTML vs CSS vs JS vs auto
     if (pMiniCfg->inputType == radioButtonAutodetect || pMiniCfg->inputType == extension)
     {
-        parserCommonSpawnParsingThread(pStateGUI, extension, true, pMiniCfg->inPath, 0);
+        internalSpawnParsingThread(pStateGUI, extension, true, (char*)pMiniCfg->inPath, 0, true);
         return true;
     }
     
@@ -526,8 +524,15 @@ void parserCommonRun(StateGUI* pStateGUI)
                 appLogPrint(L"Auto-detect option works for file paths only. Defaulting to HTML.", APP_LOG_TO_CONSOLE);
                 extension = radioButtonHTML;
             }
-            // Spawned thread frees the memory when (len == true).
-            parserCommonSpawnParsingThread(pStateGUI, extension, true, richInputContent, len * sizeof(wchar_t));
+            size_t finalLen = len * sizeof(wchar_t);
+            char* rawData = internalConvertToUTF8(richInputContent, &finalLen, CP_UTF16LE);
+            if (rawData == nullptr)
+            {
+                free(richInputContent);
+                appLogPrint(L"Error converting raw rich edit input data to UTF8. Aborting minification.", APP_LOG_TO_CONSOLE);
+                return;
+            }
+            internalSpawnParsingThread(pStateGUI, extension, true, rawData, finalLen, false);
             return; // No fallback for raw processing.
         }        
     }

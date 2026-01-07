@@ -359,7 +359,7 @@ bool mainWindowInit(HINSTANCE hInstance, StateGUI* pStateGUI)
 
     mainWindowReplaceRichTextW(pStateGUI->hwnds[richEditInput], L"<!DOCTYPE html>\r\n<html>\r\n<head>\r\n    <meta charset='utf-8'>\r\n    "
             "<meta name='viewport' content='width=device-width, initial-scale=1'>\r\n     <title>"
-            "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body>\r\n</html>");
+            "Test HTML</title>\r\n</head>\r\n<body>\r\n\r\n</body><style>CSSsomething</style><script>JSsomething</script>\r\n</html>");
 
     appLogPrint(L"(Output)", APP_LOG_TO_OUTPUT);
 
