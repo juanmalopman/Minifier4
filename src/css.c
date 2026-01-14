@@ -118,16 +118,22 @@ static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const ch
     {
         size_t newCap = (ctx->groupCap == 0) ? 4 : ctx->groupCap * 2;
         CssAtRuleGroup* tmp = realloc(ctx->groups, newCap * sizeof(CssAtRuleGroup));
-        if (!tmp) return NULL;
+        if (!tmp) return nullptr;
         ctx->groups = tmp;
         ctx->groupCap = newCap;
     }
     
-    CssAtRuleGroup* grp = &ctx->groups[ctx->groupCount++];
-    grp->querySignature = _strdup(sig);
-    grp->rules = NULL;
+    CssAtRuleGroup* grp = &ctx->groups[ctx->groupCount];
+    
+    char* dupSig = _strdup(sig);
+    if (!dupSig) return nullptr; // Fail if string duplication fails
+
+    grp->querySignature = dupSig;
+    grp->rules = nullptr;
     grp->ruleCount = 0;
     grp->ruleCap = 0;
+
+    ctx->groupCount++; 
     return grp;
 }
 
@@ -599,21 +605,70 @@ static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndID
 
 static void internalDbInit(_Inout_ DynBuf* db)
 {
-    db->len = 0; db->cap = 256;
-    db->data = malloc(db->cap);
-    if(db->data) db->data[0] = 0;
+    memset(db, 0, sizeof(DynBuf));
+    db->data = malloc(256);
+
+    if (db->data) 
+    {
+        db->cap = 256;
+        db->data[0] = 0;
+    }
+    else
+    {
+        db->cap = 0;
+        db->len = 0;
+    }
 }
 
-static void internalDbAppend(_Inout_ DynBuf* db, _In_ const char* str, _In_ size_t n)
+static void internalDbAppend(DynBuf* db, const char* str, size_t n)
 {
     if (!str || !n) return;
-    if (db->len + n + 1 >= db->cap)
+
+    // A. Check if buffer needs initialization or growth.
+    if (!db->data || db->len + n + 1 >= db->cap)
     {
-        while(db->len + n + 1 >= db->cap) db->cap *= 2;
-        char* t = realloc(db->data, db->cap);
-        if(!t) return;
+        size_t newCap;
+
+        // 1. Determine starting capacity.
+        if (!db->data)
+        {
+            // If pointer is NULL, ignore current db->cap and start fresh.
+            newCap = 256;
+        }
+        else
+        {
+            // Existing data, double the current capacity
+            newCap = db->cap; 
+        }
+
+        // 2. Grow until it fits the new string.
+        // Check for overflow to prevent infinite loops.
+        while (newCap > 0 && db->len + n + 1 >= newCap) 
+        {
+            newCap *= 2;
+        }
+        
+        // If overflow wrapped newCap to 0 or small number, abort.
+        if (newCap <= db->len + n + 1)
+        {
+            appLogError("Can't append more string CSS data. Buffer overflow.");
+            return;
+        }
+
+        // 3. Reallocate.
+        // Note: realloc(NULL, size) acts like malloc(size).
+        char* t = realloc(db->data, newCap);
+        if (!t)
+        {
+            appLogError("Can't append more string CSS data, realloc() failed.");
+            return;
+        }
+
         db->data = t;
+        db->cap = newCap;
     }
+
+    // B. Copy data
     memcpy(db->data + db->len, str, n);
     db->len += n;
     db->data[db->len] = 0;
@@ -711,6 +766,13 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
 
     // Instead of generating a string immediately, we build the Context
     CssContext* ctx = cssCreateContext();
+    if (!ctx)
+    {
+        free(pD);
+        if (args->mainParsingThread) parserCommonFinished(args->pStateGUI, NULL, 0);
+        free(args);
+        return 0;
+    }
     internalParseRawCSS(ctx, "", pD, args->len);
     free(pD);
 
@@ -723,7 +785,8 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
         
         size_t total = out.aboveLen + out.underLen;
         char* finalBuf = malloc(total + 1);
-        if (finalBuf) {
+        if (finalBuf)
+        {
             char* ptr = finalBuf;
             if(out.aboveLen) { memcpy(ptr, out.aboveCSS, out.aboveLen); ptr += out.aboveLen; }
             if(out.underLen) { memcpy(ptr, out.underCSS, out.underLen); ptr += out.underLen; }

@@ -82,6 +82,10 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
     {
         // TODO: Check not to exceed size_t.
         size_t newSize = (size_t)nBlock * ((iChildThread / nBlock) + 1) * sizeof(ChildThreads);
+        if (newSize)
+        {
+            appLogError("Size_t overflow allocating memory for helper CSS or JS thread.");
+        }
         ChildThreads* temp = realloc(*pChildThreads, newSize);
         if (!temp)
         {
@@ -551,7 +555,7 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
             }
 
             // E. Check Result.
-            if (1 || dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+            if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
             {
                 appLogError("Helper threads timed out or failed in batch processing.");
                 free(pD); return;
@@ -604,10 +608,11 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
 
     // 3. Allocate.
     *pO = malloc(*pTotalLen + 1);
-    if (!*pO) // TODO: Does the app regain ui controls returning like this?
+    if (!*pO)
     {
         cssDestroyContext(masterCss);
-        free(pD); return;
+        free(pD);
+        return;
     }
     char* pCursor = *pO;
 
@@ -683,6 +688,14 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
     ContextHTML contextHTML = { };
     ContextHTML* ctx = &contextHTML;
     ctx->pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
+
+    if (!ctx->pChildThreads)
+    {
+        appLogError("Failed to allocate initial memory for HTML child threads.");
+        if (pD) free(pD);
+        parserCommonFinished(pStateGUI, nullptr, 0); 
+        return 0;
+    }
 
     internalParseHTML(ctx, pD, len);
 
