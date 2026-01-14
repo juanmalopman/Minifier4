@@ -151,6 +151,56 @@ static CssRule* internalGetNextRuleSlot(_Inout_ CssAtRuleGroup* grp)
     return &grp->rules[grp->ruleCount++];
 }
 
+// Helper to see if space is required inside a selector or declaration block.
+static inline bool internalSpaceIsOptional(_In_ char c)
+{
+    if (parserCommonIsSpace(c)) return true;
+    
+    switch (c)
+    {
+        case '(': case ')':
+        case '<': case '>':
+        case '[': case ']':
+        case '=':
+        case ',':
+        case ':': 
+        case ';': 
+            return true;
+        default: 
+            return false;
+    }
+}
+
+static void internalRuleSetParse(_In_ const char* src, _In_ size_t len, _Out_ char* dest)
+{
+    size_t i = 0;
+    size_t o = 0;
+    for (; i < len; i++)
+    {
+        if (!parserCommonIsSpace(src[i]))
+        {
+            dest[o++] = src[i];
+            continue;
+        }
+
+        if (i + 1 < len)
+        {
+            if (internalSpaceIsOptional(src[i + 1])) continue;
+        }
+        else continue; // Skip trailing space.
+
+        if (o)
+        {
+            if (internalSpaceIsOptional(dest[o - 1])) continue;
+        }
+        else continue; // Skip leading space
+
+        dest[o++] = src[i];
+    }
+
+    dest[o] = '\0';
+}
+
 // Save CSS selector and declaration block.
 static void internalStoreRuleSet(_Inout_ CssAtRuleGroup* grp, _In_ const char* sel, _In_ size_t selLen, _In_ const char* declarationBlock, _In_ size_t declarationBlockLen)
 {
@@ -158,15 +208,27 @@ static void internalStoreRuleSet(_Inout_ CssAtRuleGroup* grp, _In_ const char* s
     if (r == nullptr) return;
     
     r->selector = malloc(selLen + 1);
-    if (r->selector != nullptr) {
-        memcpy(r->selector, sel, selLen);
-        r->selector[selLen] = 0;
+    if (r->selector != nullptr)
+    {
+        internalRuleSetParse(sel, selLen, r->selector);
+    }
+    else
+    {
+        appLogError("Failed to allocate memory for a rule set selector.");
+        return;
     }
 
     r->declarationBlock = malloc(declarationBlockLen + 1);
-    if (r->declarationBlock != nullptr) {
-        memcpy(r->declarationBlock, declarationBlock, declarationBlockLen);
-        r->declarationBlock[declarationBlockLen] = 0;
+    if (r->declarationBlock != nullptr)
+    {
+        internalRuleSetParse(declarationBlock, declarationBlockLen, r->declarationBlock);
+    }
+    else
+    {
+        appLogError("Failed to allocate memory for a declaration block.");
+        free(r->selector);
+        r->selector = nullptr;
+        return;
     }
 }
 
