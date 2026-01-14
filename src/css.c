@@ -105,14 +105,17 @@ void cssDestroyContext(CssContext* ctx)
 static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const char* sig)
 {
     // 1. Search existing
-    for (size_t i = 0; i < ctx->groupCount; i++) {
-        if (strcmp(ctx->groups[i].querySignature, sig) == 0) {
+    for (size_t i = 0; i < ctx->groupCount; i++)
+    {
+        if (strcmp(ctx->groups[i].querySignature, sig) == 0)
+        {
             return &ctx->groups[i];
         }
     }
 
     // 2. Create new
-    if (ctx->groupCount == ctx->groupCap) {
+    if (ctx->groupCount == ctx->groupCap)
+    {
         size_t newCap = (ctx->groupCap == 0) ? 4 : ctx->groupCap * 2;
         CssAtRuleGroup* tmp = realloc(ctx->groups, newCap * sizeof(CssAtRuleGroup));
         if (!tmp) return NULL;
@@ -373,7 +376,7 @@ static void internalParseRawCSS(_Inout_ CssContext* ctx, _In_ const char* curren
     }
 }
 
-static bool interalEnsurePointerArraySpace(_Inout_ SelectorList* list)
+static bool internalEnsurePointerArraySpace(_Inout_ SelectorList* list)
 {
     if (list->count == list->cap)
     {
@@ -387,7 +390,7 @@ static bool interalEnsurePointerArraySpace(_Inout_ SelectorList* list)
     return true;
 }
 
-static bool interalEnsureArenaSpace(_Inout_ SelectorList* list, _In_ size_t required)
+static bool internalEnsureArenaSpace(_Inout_ SelectorList* list, _In_ size_t required)
 {
     if (list->curr == nullptr || (list->curr->used + required > list->curr->cap))
     {
@@ -425,10 +428,10 @@ static void internalListAppend(_Inout_ SelectorList* list, _In_ const char* str)
     size_t required = strLen + 1; // +1 for null terminator
 
     // 1. Ensure we have an arena block with space.
-    if (!interalEnsureArenaSpace(list, required)) return;
+    if (!internalEnsureArenaSpace(list, required)) return;
 
     // 2. Ensure Pointer Array has space.
-    if (!interalEnsurePointerArraySpace(list)) return;
+    if (!internalEnsurePointerArraySpace(list)) return;
 
     // 3. Copy String into Arena
     char* dest = list->curr->data + list->curr->used;

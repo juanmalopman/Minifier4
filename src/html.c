@@ -80,7 +80,7 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
 {
     if (iChildThread % (nBlock + 1) == nBlock)
     {
-        // Safe multiplication check recommended for production, omitted for brevity
+        // TODO: Check not to exceed size_t.
         size_t newSize = (size_t)nBlock * ((iChildThread / nBlock) + 1) * sizeof(ChildThreads);
         ChildThreads* temp = realloc(*pChildThreads, newSize);
         if (!temp)
@@ -496,58 +496,74 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
 
 static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ char** pO, _Out_ size_t* pTotalLen)
 {
-    // If helper threads are queued. // TODO: Decompose and cap the number of simultaneous threads.
+    // If helper threads are queued.
     if (ctx->iChildThread)
     {
-        // 1. Spawn threads.
-        for (int i = 0; i < ctx->iChildThread; i++) internalSpawnHelperThread(i, ctx->pChildThreads);
-        
-        HANDLE* handleArray = malloc(ctx->iChildThread * sizeof(HANDLE));
-        if (!handleArray)
-        {
-            appLogError("Failed to allocate memory for ChildThreads handles.");
-            return;
-        }
-
-        // 2. Copy handles.
-        for (int i = 0; i < ctx->iChildThread; i++) handleArray[i] = ctx->pChildThreads[i].hThread;
-
-        // 3. Setup timing for global timeout.
-        DWORD dwTotalTimeout = 3000;
+        // TODO: Make these settings available to the user.
+        static constexpr DWORD dwTotalTimeout = 3000; // 3 seconds total for all batches.
+        static constexpr int BATCH_SIZE = 32; // Max number of threads to spawn at a time. Must be <= 64 (MAXIMUM_WAIT_OBJECTS).
         DWORD dwStartTime = GetTickCount();
-        DWORD dwWaitResult = 0;
 
-        // 4. Call WaitForMultipleObjects looping in chunks of MAXIMUM_WAIT_OBJECTS (64).
-        for (int i = 0; i < ctx->iChildThread; i += MAXIMUM_WAIT_OBJECTS)
+        HANDLE batchHandles[BATCH_SIZE];
+
+        for (int i = 0; i < ctx->iChildThread; i += BATCH_SIZE)
         {
-            // Calculate how many handles in this specific batch (max 64).
-            int remainingHandles = ctx->iChildThread - i;
-            int batchCount = (remainingHandles > MAXIMUM_WAIT_OBJECTS) ? MAXIMUM_WAIT_OBJECTS : remainingHandles;
+            // Calculate batch bounds.
+            int remaining = ctx->iChildThread - i;
+            int currentBatchCount = (remaining > BATCH_SIZE) ? BATCH_SIZE : remaining;
 
-            // Calculate how much time is left relative to the global start time.
+            // A. Spawn and Collect Handles.
+            for (int j = 0; j < currentBatchCount; j++)
+            {
+                int taskIndex = i + j;
+                if (internalSpawnHelperThread(taskIndex, ctx->pChildThreads))
+                {
+                    batchHandles[j] = ctx->pChildThreads[taskIndex].hThread;
+                }
+                else
+                {
+                    // Handle spawn failure (fallback to invalid handle to prevent wait crash).
+                    batchHandles[j] = INVALID_HANDLE_VALUE; 
+                }
+            }
+
+            // B. Calculate Time Remaining.
             DWORD dwElapsed = GetTickCount() - dwStartTime;
             DWORD dwTimeLeft = (dwElapsed >= dwTotalTimeout) ? 0 : (dwTotalTimeout - dwElapsed);
 
-            // Wait for this batch (starting in '&handleArray[i]') to complete.
-            dwWaitResult = WaitForMultipleObjects(batchCount, &handleArray[i], TRUE, dwTimeLeft);
+            // C. Wait for this specific batch.
+            // Note: WaitForMultipleObjects fails if count is 0, but logic guarantees > 0 here.
+            DWORD dwWaitResult = WaitForMultipleObjects(
+                (DWORD)currentBatchCount, 
+                batchHandles, 
+                TRUE,
+                dwTimeLeft
+            );
 
-            // Stop if we timed out or failed.
-            if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+            // D. Cleanup Handles immediately to free system resources.
+            for (int j = 0; j < currentBatchCount; j++)
             {
-                appLogError("Spawned helper threads not ready."); // TODO: Do we need to free pD?
-                break;
+                if (batchHandles[j] && batchHandles[j] != INVALID_HANDLE_VALUE)
+                {
+                    CloseHandle(batchHandles[j]);
+                    ctx->pChildThreads[i + j].hThread = nullptr;
+                }
+            }
+
+            // E. Check Result.
+            if (1 || dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+            {
+                appLogError("Helper threads timed out or failed in batch processing.");
+                free(pD); return;
             }
         }
-        
-        for (int i = 0; i < ctx->iChildThread; i++) if (handleArray[i]) CloseHandle(handleArray[i]);
-        free(handleArray); 
     }
 
     // 1. Merge CSS Contexts & Generate Output.
     CssContext* masterCss = cssCreateContext();
     if (!masterCss)
     {
-        appLogError("Failed to allocate memory for masterCss context."); // TODO: Does the app regain ui controls returning like this?
+        appLogError("Failed to allocate memory for masterCss context.");
         free(pD); return;
     }
 
