@@ -1,3 +1,6 @@
+// ============================================================================== 
+// FILE: src\html.c 
+// ============================================================================== 
 
 //
 // DEPENDENCIES
@@ -16,6 +19,18 @@
 #include "js.h"
 
 //
+// ENUMS
+//
+
+typedef enum FoundAttribute : int
+{
+    ATTR_NONE = -1,
+    ATTR_CLASS = 0,
+    ATTR_ID,
+    ATTR_HREF
+} FoundAttribute;
+
+//
 // STRUCTS
 //
 
@@ -24,39 +39,53 @@ typedef struct ChildThreads
     ParsingThreadArgs parsingThreadArgs;
     bool isCSS;
     HANDLE hThread;
-}ChildThreads;
+} ChildThreads;
 
 
 typedef struct ContextHTML
 {
     int iChildThread;
     ChildThreads* pChildThreads;
-    size_t iCSS;
-    size_t iFold;
-    size_t iJS;
+    
+    // Position markers
+    size_t iCSS;     // Where <style> goes in head
+    size_t iFold;    // Where the fold comment was found
+    size_t iJS;      // Where <script> goes (usually body end)
     size_t iError[2];
-    size_t o;
-}ContextHTML;
+    size_t o;        // Output write cursor index
+    
+    // CSS Logic
+    SetOfClassesAndIDs critSet; // Stores classes found "Above the Fold"
+    bool isUnderFold;            // State flag during parsing
+} ContextHTML;
 
 //
 // CONFIGURATION CONSTANTS
 //
 
 static constexpr int nThreadBlock = 99; // How many thread stucts to allocate in memory at a time.
+static constexpr char styleTag[] = "<style>";
+static constexpr char scriptTag[] = "<script>";
+static constexpr char styleEndTag[] = "</style>";
+static constexpr char scriptEndTag[] = "</script>";
+static constexpr char headEndTag[] = "</head>";
+static constexpr char bodyEndTag[] = "</body>";
+static constexpr int maxLenClassOrID = 255; // There's no official spec for length of classes and ID's, but this app will cap them.
 
 //
 // FUNCTIONS
 //
 
-static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ ChildThreads** pChildThreads, _In_ int nThreadBlock)
+static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ ChildThreads** pChildThreads, _In_ int nBlock)
 {
-    // If there's no more memory to store child thread data, allocate.
-    if (iChildThread % (nThreadBlock + 1) == nThreadBlock)
+    if (iChildThread % (nBlock + 1) == nBlock)
     {
-        ChildThreads* temp = realloc(*pChildThreads, nThreadBlock * ((iChildThread / nThreadBlock) + 1) * sizeof(ChildThreads));
+        // Safe multiplication check recommended for production, omitted for brevity
+        size_t newSize = (size_t)nBlock * ((iChildThread / nBlock) + 1) * sizeof(ChildThreads);
+        ChildThreads* temp = realloc(*pChildThreads, newSize);
         if (!temp)
         {
-            appLogError("Failed to allocate memory for helper CSS or JS thread with malloc().");
+            appLogError("Failed to allocate memory for helper CSS or JS thread.");
             return false;
         }
         *pChildThreads = temp;
@@ -64,334 +93,560 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
     return true;
 }
 
-static void internalQueueHelperThread(_Inout_ int* iChildThread, _Out_ ChildThreads* pChildThreads, _In_ bool isPath, _In_ bool isCSS, _In_ char* buffer, _In_ int bufferLen)
+static void internalQueueHelperThread(_Inout_ ContextHTML* ctx, _In_ bool isPath, _In_ bool isCSS, _In_ char* buffer, _In_ size_t bufferLen)
 {
-    pChildThreads[*iChildThread].parsingThreadArgs.pStateGUI = nullptr;
-    pChildThreads[*iChildThread].parsingThreadArgs.mainParsingThread = false;
-    pChildThreads[*iChildThread].parsingThreadArgs.data = buffer;
-    pChildThreads[*iChildThread].parsingThreadArgs.len = bufferLen;
-    pChildThreads[*iChildThread].parsingThreadArgs.isPath = isPath;
-    pChildThreads[*iChildThread].isCSS = isCSS;
-    (*iChildThread)++;
+    if (!internalAllocateChildThreadStructMem(ctx->iChildThread, &ctx->pChildThreads, nThreadBlock))
+    {
+        free(buffer);
+        return;
+    }
+
+    ChildThreads* thread = &ctx->pChildThreads[ctx->iChildThread];
+    thread->parsingThreadArgs.pStateGUI = nullptr;
+    thread->parsingThreadArgs.mainParsingThread = false;
+    thread->parsingThreadArgs.data = buffer;
+    thread->parsingThreadArgs.len = bufferLen;
+    thread->parsingThreadArgs.isPath = isPath;
+    thread->isCSS = isCSS;
+    
+    ctx->iChildThread++;
 }
 
-static bool internalSpawnHelperThread(_In_ int iChildThread, _Inout_ ChildThreads* pChildThreads)
+static bool internalSpawnHelperThread(_In_ int index, _In_ ChildThreads* pChildThreads)
 {
-    // Determine what helper thread we need.
-    typedef DWORD WINAPI (*WorkerSpawnThread)(LPVOID lpParam);
-    WorkerSpawnThread selectedFunc = nullptr;
-
-    selectedFunc = pChildThreads[iChildThread].isCSS ? cssSpawnThread : jsSpawnThread;
-    pChildThreads[iChildThread].hThread = CreateThread(
-        NULL,                               // Default security attributes.
-        0,                                  // Default stack size.
-        selectedFunc,                       // The thread to spwan.
-        &(pChildThreads->parsingThreadArgs),// The argument struct.
-        0,                                  // Default creation flags.
-        NULL                                // Don't need the thread ID.
+    DWORD (WINAPI *selectedFunc)(LPVOID) = pChildThreads[index].isCSS ? cssSpawnThread : jsSpawnThread;
+    
+    pChildThreads[index].hThread = CreateThread(
+        NULL, 0, selectedFunc,
+        &(pChildThreads[index].parsingThreadArgs),
+        0, NULL
     );
 
-    if (!pChildThreads[iChildThread].hThread)
+    if (!pChildThreads[index].hThread)
     {
         appLogError("Failed to spawn helper thread.");
         return false;
     }
-
     return true;
+}
+
+static void internalHandleComment(_Inout_ ContextHTML* ctx, _In_ char* pD, _In_ size_t len, _Inout_ size_t* idx, _Inout_ size_t* lastNewline)
+{
+    // Start of comment detected at pD[*idx] == '!' (after < and - and -)
+    // Check previous chars to confirm <!--
+    if (*idx < 1 || pD[*idx - 1] != '<' || *idx + 2 >= len || pD[*idx + 1] != '-' || pD[*idx + 2] != '-')
+    {
+        pD[ctx->o++] = pD[*idx];
+        return;
+    }
+
+    ctx->o--; // Erase '<' written in previous iteration
+    size_t commentStart = *idx - 1;
+
+    // Scan forward for -->
+    for (size_t k = *idx; k < len; k++)
+    {
+        if (pD[k] == '>' && pD[k - 1] == '-' && pD[k - 2] == '-')
+        {
+            // Check Special Tags
+            if (!_strnicmp(&pD[commentStart], htmlTagFold, sizeof(htmlTagFold) - 1))
+            {
+                ctx->iFold = ctx->o;
+                ctx->isUnderFold = true;
+            }
+            else if (!_strnicmp(&pD[commentStart], htmlTagError, sizeof(htmlTagError) - 1))
+            {
+                if (!ctx->iError[0]) ctx->iError[0] = ctx->o;
+                else ctx->iError[1] = ctx->o;
+            }
+            
+            *lastNewline = k; // Update newline tracker as comments effectively reset context
+            *idx = k;         // Move main loop index
+            return;
+        }
+    }
+    
+    // If we reached here, comment wasn't closed properly or logic fell through
+    pD[ctx->o++] = '!'; 
+}
+
+static FoundAttribute identifyAttribute(_In_ char* pD, _In_ size_t idx)
+{
+    static constexpr size_t LOOKBACK_LIMIT = 200;
+    static constexpr size_t MAX_ATTR_LEN   = 15;
+    
+    size_t searchLimitIdx = (idx >= LOOKBACK_LIMIT) ? (idx - LOOKBACK_LIMIT) : 0;
+    size_t attrStartIdx   = 0;
+    size_t attrLength     = 0;
+    size_t tagStartRelPos = 0;
+    size_t scanIdx = idx - 1;
+
+    for (; scanIdx > 0; scanIdx--)
+    {
+        char c = pD[scanIdx];
+        if (parserCommonIsBlank(c))
+        {
+            if (attrLength != 0 && attrStartIdx == 0) attrStartIdx = scanIdx + 1;
+        }
+        else if (c == '<')
+        {
+            tagStartRelPos = (searchLimitIdx + LOOKBACK_LIMIT) - scanIdx;
+            break; 
+        }
+        else
+        {
+            if (attrStartIdx == 0) attrLength++;
+        }
+        
+        if (tagStartRelPos != 0 || attrLength > MAX_ATTR_LEN || scanIdx == searchLimitIdx) break; 
+    }
+
+    if (tagStartRelPos == 0 || attrLength > MAX_ATTR_LEN || attrStartIdx == 0) return ATTR_NONE;
+
+    if (attrLength == 5 && !_strnicmp(&pD[attrStartIdx], "class", 5)) return ATTR_CLASS;
+    if (attrLength == 2 && !_strnicmp(&pD[attrStartIdx], "id", 2))    return ATTR_ID;
+    if (attrLength == 4 && !_strnicmp(&pD[attrStartIdx], "href", 4))  return ATTR_HREF;
+    if (attrLength == 3 && !_strnicmp(&pD[attrStartIdx], "src", 3))   return ATTR_HREF;
+
+    return ATTR_NONE;
+}
+
+static void internalProcessClassOrId(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len, _Inout_ size_t* idx, _In_ bool isId)
+{
+    char tempName[maxLenClassOrID]; 
+    size_t tempLen = 0;
+    
+    // *idx is currently at the opening quote
+    (*idx)++; 
+    
+    for (; *idx < len - 1; (*idx)++)
+    {
+        char c = pD[*idx];
+        bool isSep = parserCommonIsSpace(c);
+        bool isQuote = (c == '\"' || c == '\'');
+
+        if (isSep || isQuote)
+        {
+            if (tempLen > 0)
+            {
+                tempName[tempLen] = 0;
+                cssRecordSelector(&ctx->critSet, tempName, isId, !ctx->isUnderFold);
+
+                // Write space if needed
+                if (ctx->o > 0 && pD[ctx->o-1] != '\"' && pD[ctx->o-1] != '\'')
+                {
+                    pD[ctx->o++] = ' ';
+                }
+                memcpy(&pD[ctx->o], tempName, tempLen);
+                ctx->o += tempLen;
+                tempLen = 0;
+            }
+            
+            if (isQuote)
+            {
+                pD[ctx->o++] = c;
+                return; // Done
+            }
+        }
+        else
+        {
+            if (tempLen < maxLenClassOrID - 1) tempName[tempLen++] = c;
+        }
+    }
+}
+
+static void internalProcessExternalResource(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len, _Inout_ size_t* idx)
+{
+    size_t pathLen = 0;
+    char path[MAX_PATH] = { };
+    char fileExt[12] = { };
+    int8_t extLen = -1;
+    bool pathDone = false;
+    
+    size_t openingQuoteIdx = *idx;
+
+    // Scan the HREF value
+    for (; *idx < len - 1; (*idx)++)
+    {
+        char c = pD[*idx];
+        if (pathLen > MAX_PATH - 10) break;
+
+        // Check for Quote (Start or End).
+        if (c == '\"' || c == '\'')
+        {
+            if (*idx == openingQuoteIdx) continue; // Skip opening
+            else break; // Closing found.
+        }
+
+        // Handle Spaces inside URL
+        if (parserCommonIsSpace(c))
+        {
+            if (pathLen == 0) continue; 
+            pathDone = true;
+            continue;
+        }
+
+        // Safety break
+        if (c == '>') { (*idx)--; break; }
+
+        if (!pathDone)
+        {
+            path[pathLen++] = c;
+            if (c == '.') { memset(fileExt, 0, sizeof(fileExt)); extLen = 0; continue; }
+            if (extLen > -1 && extLen < 11) fileExt[extLen++] = c;
+        }
+    }
+
+    bool isJS  = (_strnicmp(fileExt, "js", 2) == 0);
+    bool isCSS = (_strnicmp(fileExt, "css", 3) == 0);
+
+    if ((isJS || isCSS) && pathLen > 0)
+    {
+        char* buffer = malloc(pathLen + 1);
+        if (buffer)
+        {
+            memcpy(buffer, path, pathLen);
+            buffer[pathLen] = 0;
+            internalQueueHelperThread(ctx, true, isCSS, buffer, pathLen);
+
+            // Erase the tag currently being written (<link... or <script...)
+            // Backtrack ctx->o until '<' is found
+            while (ctx->o > 0)
+            {
+                ctx->o--;
+                char c = pD[ctx->o];
+                pD[ctx->o] = 0;
+                if (c == '<') break; 
+            }
+
+            // Consume rest of input tag in pD
+            for (; *idx < len; (*idx)++) if (pD[*idx] == '>') break;
+            
+            // If JS script tag, also consume the closing </script>. ++(*idx) skips current '>' just found.
+            if (isJS) for (; ++(*idx) < len; (*idx)++) if (pD[*idx] == '>') break;
+            return;
+        }
+    }
+
+    // Failed or not valid resource, reset logic to treat as normal text.
+    *idx = openingQuoteIdx; 
+}
+
+static void internalHandleAttribute(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len, _Inout_ size_t* idx)
+{
+    FoundAttribute attrType = identifyAttribute(pD, *idx);
+
+    if (attrType == ATTR_NONE)
+    {
+        pD[ctx->o++] = '=';
+        return;
+    }
+
+    // Rewind output to remove spaces before '='
+    while (ctx->o > 0 && parserCommonIsSpace(pD[ctx->o-1]))
+    {
+        ctx->o--; 
+        pD[ctx->o] = 0;
+    }
+    pD[ctx->o++] = '=';
+
+    // Find Opening Quote
+    (*idx)++; 
+    for (; *idx < len - 1; (*idx)++)
+    {
+        char c = pD[*idx];
+        if (c == '\"' || c == '\'')
+        {
+            pD[ctx->o++] = c;
+            // Don't increment idx here, passed to helpers at quote pos
+            break;
+        }
+        // If we hit non-space non-quote, it's unquoted attr (not supported by this optimizer safely), abort
+        if (!parserCommonIsSpace(c)) return; 
+    }
+
+    switch (attrType)
+    {
+        case ATTR_CLASS: internalProcessClassOrId(ctx, pD, len, idx, false); break;
+        case ATTR_ID:    internalProcessClassOrId(ctx, pD, len, idx, true);  break;
+        case ATTR_HREF:  internalProcessExternalResource(ctx, pD, len, idx); break;
+        default: break;
+    }
+}
+
+static void internalHandleOpenTag(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len, _Inout_ size_t* idx)
+{
+    // Look ahead to identify tag
+    if (!(*idx + sizeof(scriptTag) - 1 < len))
+    {
+        pD[ctx->o++] = '<'; return;
+    }
+
+    size_t i = *idx;
+    bool isInlineStyle = false;
+    bool isInlineScript = false;
+
+    if (!_strnicmp(&pD[i], styleTag, sizeof(styleTag) - 1))
+    {
+        i += sizeof(styleTag) - 1; isInlineStyle = true;
+    }
+    else if (!_strnicmp(&pD[i], scriptTag, sizeof(scriptTag) - 1))
+    {
+        i += sizeof(scriptTag) - 1; isInlineScript = true;
+    }
+    else if (!_strnicmp(&pD[i], headEndTag, sizeof(headEndTag) - 1))
+    {
+        ctx->iCSS = ctx->o; 
+        pD[ctx->o++] = '<'; return;
+    }
+    else if (!_strnicmp(&pD[i], bodyEndTag, sizeof(bodyEndTag) - 1))
+    {
+        ctx->iJS = ctx->o; 
+        pD[ctx->o++] = '<'; return;
+    }
+    else
+    {
+        pD[ctx->o++] = '<'; return;
+    }
+
+    // If we are here, we found an inline <style> or <script> to extract
+    size_t contentStart = i;
+    size_t contentLen = 0;
+
+    // Scan for end tag
+    for (; i < len; i++)
+    {
+        if (pD[i] == '<')
+        {
+            if (isInlineStyle && !_strnicmp(&pD[i], styleEndTag, sizeof(styleEndTag)-1))
+            {
+                contentLen = i - contentStart; 
+                i += sizeof(styleEndTag) - 2; 
+                break;
+            }
+            if (isInlineScript && !_strnicmp(&pD[i], scriptEndTag, sizeof(scriptEndTag)-1))
+            {
+                contentLen = i - contentStart; 
+                i += sizeof(scriptEndTag) - 2; 
+                break;
+            }
+        }
+    }
+    
+    char* buffer = malloc(contentLen + 1);
+    if (buffer)
+    {
+        memcpy(buffer, &pD[contentStart], contentLen);
+        buffer[contentLen] = 0;
+        internalQueueHelperThread(ctx, false, isInlineStyle, buffer, contentLen);
+        *idx = i; // Move main loop index to end of tag
+    }
+    else
+    {
+        // Allocation failure fallback: just output original char
+        pD[ctx->o++] = '<';
+    }
 }
 
 static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ size_t len)
 {
     size_t lastWasNewline = 0;
-    for (size_t i = 0; i < len; i++ )
+    
+    for (size_t i = 0; i < len; i++)
     {
         switch (pD[i])
         {
-        case '\b': // ---------------------------------------------------------------------------------- '\b'
-        case '\a': // ---------------------------------------------------------------------------------- '\a'
-        {
-            // Tabs (\t), backspaces (\b) and alerts (\a) get skipped.
-
-            // If last char was a newline, update lastWasNewline to skip any future whitespaces etc. as if '\b' and '\a' never existed.
+        case '\b':
+        case '\a':
             if (i && i - 1 == lastWasNewline) lastWasNewline = i;
             break;
-        }
 
-        case '\r': // ---------------------------------------------------------------------------------- '\r'
-        case '\n': // ---------------------------------------------------------------------------------- '\n'
-        {
-            // Newline(\n) and return chars (\r) get skipped.
-
-            // Store the index. Next iteration might find a whitespace and decide to skip it thanks to this info.
+        case '\r':
+        case '\n':
             lastWasNewline = i;
             break;
-        }
-        case '\t': // ---------------------------------------------------------------------------------- '\t'
-        case ' ': // ----------------------------------------------------------------------------------- ' '
-        {
-            // Whitespaces ( ) and tabs (\t) that are next to a newline char get skipped.
-            if (i && i - 1 == lastWasNewline)
-            {
+
+        case '\t':
+        case ' ':
+            if (i && i - 1 == lastWasNewline) {
                 lastWasNewline = i;
                 break;
             }
-
-            // If not, write them.
-            goto doDefault;
-            break;
-        }
-        case '!': // ----------------------------------------------------------------------------------- '!'
-        {
-            if (!i) goto doDefault; // A file starting with '!'.
-
-            if (!(i + 2 < len)) goto doDefault; // File ends before <!-- fits.
-
-            // Check if it's a comment.
-            if (pD[i - 1] == '<' && pD[i + 1] == '-' && pD[i + 2] == '-')
-            {
-                // Erase last written char because it was part of a comment.
-                ctx->o--;
-
-                size_t commentStart = i - 1;
-
-                // Skip the comment but also check if it's a special tag.
-                int possibleParseMessageInComment = 1;
-                for (; i < len; i++)
-                {
-                    possibleParseMessageInComment++;
-                    if (pD[i] == '>' && pD[i - 1] == '-' && pD[i - 2] == '-')
-                    {
-
-                        // Check against special tags.
-                        if (!_strnicmp(&pD[commentStart], htmlTagFold, sizeof(htmlTagFold) - 1))
-                        {
-                            ctx->iFold = ctx->o;
-                        }
-                        else if (!_strnicmp(&pD[commentStart], htmlTagError, sizeof(htmlTagError) - 1))
-                        {
-                            // First index for an error page title.
-                            if (!ctx->iError[0]) ctx->iError[0] = ctx->o;
-                            // Next for an error page banner in body.
-                            else ctx->iError[1] = ctx->o;
-                        }
-                        
-                        // Erase whitespaces after comments. User must avoid comments in the middle of strings.
-                        lastWasNewline = i;
-
-                        // Exit the loop.
-                        break;
-                    }
-                }
-            }
-            // If not part of a comment.
-            else
-            {
-                goto doDefault;
-            }
-
-            break;
-        }
-        case '<': // ------------------------------------------------------------------------------------------ '<'
-        {
-            // Check for style tags with inline CSS or <script> tags with inline JS.
-            static constexpr char styleTag[] = "<style>";
-            static constexpr char scriptTag[] = "<script>";
-            static constexpr char styleEndTag[] = "</style>";
-            static constexpr char scriptEndTag[] = "</script>";
-            static constexpr char headEndTag[] = "</head>";
-            static constexpr char bodyEndTag[] = "</body>";
-            size_t startIndex;
-
-            if (!(i + sizeof(scriptTag) - 1 < len)) goto doDefault;
-
-            if (!_strnicmp(&pD[i], styleTag, sizeof(styleTag) - 1))
-            {
-                appLogPrint("Inline CSS found.", APP_LOG_TO_CONSOLE);
-                i += sizeof(styleTag) - 1;
-                startIndex = i;
-            }
-            else if (!_strnicmp(&pD[i], scriptTag, sizeof(scriptTag) - 1))
-            {
-                appLogPrint("Inline JS found.", APP_LOG_TO_CONSOLE);
-                i += sizeof(scriptTag) - 1;
-                startIndex = i;
-            }
-            else if (!_strnicmp(&pD[i], headEndTag, sizeof(headEndTag) - 1))
-            {
-                appLogPrint("Head end found.", APP_LOG_TO_CONSOLE);
-                ctx->iCSS = ctx->o;
-                goto doDefault;
-            }
-            else if (!_strnicmp(&pD[i], bodyEndTag, sizeof(bodyEndTag) - 1))
-            {
-                appLogPrint("Body end found.", APP_LOG_TO_CONSOLE);
-                ctx->iJS = ctx->o;
-                goto doDefault;
-            }
-            else
-            {
-                goto doDefault;
-            }
-
-            // Skip all the content up to next tag.
-            bool isCSS = true;
-            size_t bufferLen;
-
-            for (; i < len; i++)
-            {
-                if (pD[i] == '<')
-                {
-                    if (!_strnicmp(&pD[i], styleEndTag, sizeof(styleEndTag) - 1))
-                    {
-                        bufferLen = i - startIndex;
-                        // -1 because of the null termination and -1 because next iteration of the parsing loop will increment i.
-                        i += sizeof(styleEndTag) - 1 - 1;
-                        break;
-                    }
-                    else if (!_strnicmp(&pD[i], scriptEndTag, sizeof(scriptEndTag) - 1))
-                    {
-                        bufferLen = i - startIndex;
-                        // -1 because of the null termination and -1 because next iteration of the parsing loop will increment i.
-                        i += sizeof(scriptEndTag) - 1 - 1;
-                        isCSS = false;
-                        break;
-                    }
-                }
-            }
-
-            if (i == len - 1)
-            {
-                appLogPrint("ERROR: </style> or </script> tag never found.", APP_LOG_TO_CONSOLE);
-                break;
-            }
-
-            // Allocate heap and store the CSS or JS.
-            char* buffer = nullptr;
-            buffer = malloc(bufferLen + 1); // +1 for null termination.
-            if (!buffer)
-            {
-                appLogError("Failed to allocate memory for inline CSS or JS with malloc().");
-                break;
-            }
-            memcpy(buffer, &pD[startIndex], bufferLen);
-            buffer[bufferLen] = '\0'; // Null terminate the string.
-
-            if(!internalAllocateChildThreadStructMem(ctx->iChildThread, &ctx->pChildThreads, nThreadBlock))
-            {
-                free(buffer);
-                break;
-            }
-
-            internalQueueHelperThread(&ctx->iChildThread, ctx->pChildThreads, false, isCSS, buffer, bufferLen);
-
-            break;
-        }
-        default: // ------------------------------------------------------------------------------------ default
-        doDefault:
-        {
-            // By default, chars get written into the ouput.
             pD[ctx->o++] = pD[i];
             break;
-        }
+
+        case '!': 
+            internalHandleComment(ctx, pD, len, &i, &lastWasNewline);
+            break;
+
+        case '=': 
+            internalHandleAttribute(ctx, pD, len, &i);
+            break;
+
+        case '<': 
+            internalHandleOpenTag(ctx, pD, len, &i);
+            break;
+
+        default:
+            pD[ctx->o++] = pD[i];
+            break;
         }
     } 
 }
 
 static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ char** pO, _Out_ size_t* pTotalLen)
 {
-    // If there's nowhere valid to inject CSS and JS, terminate.
-    if (!ctx->iCSS || !ctx->iJS || ctx->iJS <= ctx->iCSS)
-    {
-        free(pD);
-        *pO = nullptr;
-        *pTotalLen = 0;
-        return;
-    }
-
-    // With all the classes and IDs registered, spawn all queued threads.
-    for (int i = 0; i < ctx->iChildThread; i++)
-    {
-        internalSpawnHelperThread(i, ctx->pChildThreads);
-    }
-
-    // Wait for any helper thread spawned to finish it's work and terminate.
+    // If helper threads are queued. // TODO: Decompose and cap the number of simultaneous threads.
     if (ctx->iChildThread)
     {
+        // 1. Spawn threads.
+        for (int i = 0; i < ctx->iChildThread; i++) internalSpawnHelperThread(i, ctx->pChildThreads);
+        
         HANDLE* handleArray = malloc(ctx->iChildThread * sizeof(HANDLE));
-        for (int i = 0; i < ctx->iChildThread; i++) handleArray[i] = ctx->pChildThreads[i].hThread;
-        DWORD waitResult = WaitForMultipleObjects(ctx->iChildThread, handleArray, TRUE, 3000);
-
-        if (waitResult == WAIT_TIMEOUT)
+        if (!handleArray)
         {
-            appLogError("ERROR: Helper threads not done processing 3 seconds later.");
-            // TODO: Terminate them.
-            free(pD);
-            *pO = nullptr;
-            *pTotalLen = 0;
+            appLogError("Failed to allocate memory for ChildThreads handles.");
             return;
         }
+
+        // 2. Copy handles.
+        for (int i = 0; i < ctx->iChildThread; i++) handleArray[i] = ctx->pChildThreads[i].hThread;
+
+        // 3. Setup timing for global timeout.
+        DWORD dwTotalTimeout = 3000;
+        DWORD dwStartTime = GetTickCount();
+        DWORD dwWaitResult = 0;
+
+        // 4. Call WaitForMultipleObjects looping in chunks of MAXIMUM_WAIT_OBJECTS (64).
+        for (int i = 0; i < ctx->iChildThread; i += MAXIMUM_WAIT_OBJECTS)
+        {
+            // Calculate how many handles in this specific batch (max 64).
+            int remainingHandles = ctx->iChildThread - i;
+            int batchCount = (remainingHandles > MAXIMUM_WAIT_OBJECTS) ? MAXIMUM_WAIT_OBJECTS : remainingHandles;
+
+            // Calculate how much time is left relative to the global start time.
+            DWORD dwElapsed = GetTickCount() - dwStartTime;
+            DWORD dwTimeLeft = (dwElapsed >= dwTotalTimeout) ? 0 : (dwTotalTimeout - dwElapsed);
+
+            // Wait for this batch (starting in '&handleArray[i]') to complete.
+            dwWaitResult = WaitForMultipleObjects(batchCount, &handleArray[i], TRUE, dwTimeLeft);
+
+            // Stop if we timed out or failed.
+            if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+            {
+                appLogError("Spawned helper threads not ready."); // TODO: Do we need to free pD?
+                break;
+            }
+        }
+        
+        for (int i = 0; i < ctx->iChildThread; i++) if (handleArray[i]) CloseHandle(handleArray[i]);
+        free(handleArray); 
     }
 
-    // See total output len.
-    *pTotalLen = ctx->o;
-    for (int i = 0; i < ctx->iChildThread; i++) *pTotalLen += ctx->pChildThreads[i].parsingThreadArgs.len; 
-
-    // Allocate for the output.
-    *pO = malloc(*pTotalLen);
-    if (!*pO)
+    // 1. Merge CSS Contexts & Generate Output.
+    CssContext* masterCss = cssCreateContext();
+    if (!masterCss)
     {
-        appLogError("Failed to allocate memory for entire output.");
-        free(pD);
-        *pO = nullptr;
-        *pTotalLen = 0;
-        return;
+        appLogError("Failed to allocate memory for masterCss context."); // TODO: Does the app regain ui controls returning like this?
+        free(pD); return;
     }
 
-    // Tie all helper threads output together.
-    char* pCursor = *pO;
-
-    memcpy(pCursor, pD, ctx->iCSS); // Copy HTML up to the CSS start.
-    pCursor += ctx->iCSS;
-
-    // Copy any CSS.
+    CssOutputs cssOut = { };
+    
+    // Iterate threads to merge CSS.
     for (int i = 0; i < ctx->iChildThread; i++)
     {
         if (ctx->pChildThreads[i].isCSS)
         {
-            char* pData = ctx->pChildThreads[i].parsingThreadArgs.data;
-            size_t len  = ctx->pChildThreads[i].parsingThreadArgs.len;
-
-            if (pData != nullptr && len > 0)
+            CssContext* threadCtx = (CssContext*)ctx->pChildThreads[i].parsingThreadArgs.data;
+            if (threadCtx)
             {
-                memcpy(pCursor, pData, len);
-                pCursor += len;
+                cssMergeContexts(masterCss, threadCtx);
+                cssDestroyContext(threadCtx);
             }
         }
     }
 
-    size_t lenMiddle = ctx->iJS - ctx->iCSS;
-    memcpy(pCursor, pD + ctx->iCSS, lenMiddle); // Copy HTML up to the JS start.
-    pCursor += lenMiddle;
+    // Generate Final Split CSS using the Critical Set we gathered parsing HTML.
+    cssOut = cssGenerateSplitOutput(masterCss, &ctx->critSet);
 
-    // Copy any JS.
+    // 2. Calculate Total Size.
+    *pTotalLen = ctx->o;
+    
+    // Add CSS sizes (Above + Under).
+    if (cssOut.aboveLen > 0) *pTotalLen += cssOut.aboveLen + strlen(styleTag) + strlen(styleEndTag);
+    if (cssOut.underLen > 0) *pTotalLen += cssOut.underLen + strlen(styleTag) + strlen(styleEndTag);
+    
+    // Add JS sizes.
     for (int i = 0; i < ctx->iChildThread; i++)
     {
         if (!ctx->pChildThreads[i].isCSS)
         {
-            char* pData = ctx->pChildThreads[i].parsingThreadArgs.data;
-            size_t len  = ctx->pChildThreads[i].parsingThreadArgs.len;
+            *pTotalLen += ctx->pChildThreads[i].parsingThreadArgs.len + strlen(scriptTag) + strlen(scriptEndTag);
+        }
+    }
 
-            if (pData != nullptr && len > 0)
+    // 3. Allocate.
+    *pO = malloc(*pTotalLen + 1);
+    if (!*pO) // TODO: Does the app regain ui controls returning like this?
+    {
+        cssDestroyContext(masterCss);
+        free(pD); return;
+    }
+    char* pCursor = *pO;
+
+    // 4. Stitching.
+    
+    // A. Header (HTML up to <style> insertion point).
+    memcpy(pCursor, pD, ctx->iCSS); 
+    pCursor += ctx->iCSS;
+
+    // B. Critical CSS (Above the Fold).
+    if (cssOut.aboveLen > 0)
+    {
+        memcpy(pCursor, styleTag, sizeof(styleTag) - 1); pCursor += sizeof(styleTag) - 1;
+        memcpy(pCursor, cssOut.aboveCSS, cssOut.aboveLen); pCursor += cssOut.aboveLen;
+        memcpy(pCursor, styleEndTag, sizeof(styleEndTag) - 1); pCursor += sizeof(styleEndTag) - 1;
+    }
+
+    // C. Middle HTML (From <style> to <script>/Footer).
+    size_t lenMiddle = ctx->iJS - ctx->iCSS;
+    memcpy(pCursor, pD + ctx->iCSS, lenMiddle);
+    pCursor += lenMiddle;
+
+    // D. Javascript (All JS threads).
+    for (int i = 0; i < ctx->iChildThread; i++)
+    {
+        if (!ctx->pChildThreads[i].isCSS)
+        {
+            char* jsData = ctx->pChildThreads[i].parsingThreadArgs.data;
+            size_t jsLen = ctx->pChildThreads[i].parsingThreadArgs.len;
+            if (jsData && jsLen)
             {
-                memcpy(pCursor, pData, len);
-                pCursor += len;
+                memcpy(pCursor, scriptTag, sizeof(scriptTag) - 1); pCursor += sizeof(scriptTag) - 1;
+                memcpy(pCursor, jsData, jsLen); pCursor += jsLen;
+                memcpy(pCursor, scriptEndTag, sizeof(scriptEndTag) - 1); pCursor += sizeof(scriptEndTag) - 1;
             }
         }
     }
 
-    size_t lenFooter = ctx->o - ctx->iJS;
-    memcpy(pCursor, pD + ctx->iJS, lenFooter + 1); // Copy HTML up to the end.
+    // E. Non-Critical CSS (Under the Fold) - Lazy Loaded at bottom.
+    if (cssOut.underLen > 0)
+    {
+        memcpy(pCursor, styleTag, sizeof(styleTag) - 1); pCursor += sizeof(styleTag) - 1;
+        memcpy(pCursor, cssOut.underCSS, cssOut.underLen); pCursor += cssOut.underLen;
+        memcpy(pCursor, styleEndTag, sizeof(styleEndTag) - 1); pCursor += sizeof(styleEndTag) - 1;
+    }
 
+    // F. Footer HTML.
+    size_t lenFooter = ctx->o - ctx->iJS;
+    memcpy(pCursor, pD + ctx->iJS, lenFooter);
+    pCursor += lenFooter;
+    *pCursor = '\0'; // Null terminate
+
+    // 5. Cleanup.
+    cssDestroyContext(masterCss);
+    cssOutFree(&cssOut);
     free(pD);
 }
 
@@ -403,11 +658,8 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
     StateGUI* pStateGUI = argsStack.pStateGUI;
     size_t len = argsStack.len;
 
-    // Get the pointer we need, to data forwarded or by opening a file, already in UTF-8.
     char* pD = parserCommonGetPointerToUTF8(argsStack.data, &len, argsStack.isPath);
-    if (!pD)
-    {
-        appLogPrint("HTML thead failed to get a pointer to valid data to parse.", APP_LOG_TO_CONSOLE);
+    if (!pD) {
         parserCommonFinished(pStateGUI, 0, 0);
         return 0;
     }
@@ -418,22 +670,23 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
 
     internalParseHTML(ctx, pD, len);
 
-    // Ensure null termination (without incrementing the index, to avoid written files to be null terminated).
     if (ctx->o < len) pD[ctx->o] = '\0';
 
-    // If no helper CSS or JS threads to spawn, we're done.
     if (!ctx->iChildThread)
     {
         parserCommonFinished(pStateGUI, pD, ctx->o);
-        return 0;
     }
-
-
-    size_t totalLen;
-    char* pO;
-    internalStitching(ctx, pD, &pO, &totalLen);
-
-    parserCommonFinished(pStateGUI, pO, totalLen);
+    else
+    {
+        size_t totalLen;
+        char* pO;
+        internalStitching(ctx, pD, &pO, &totalLen);
+        parserCommonFinished(pStateGUI, pO, totalLen);
+    }
+    
+    // Clean up class and ID stored names.
+    cssFreeCriticalSet(&ctx->critSet);
+    if(ctx->pChildThreads) free(ctx->pChildThreads);
     
     return 0;
 }

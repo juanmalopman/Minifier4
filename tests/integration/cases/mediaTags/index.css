@@ -1,0 +1,286 @@
+/*--------------------------------------------------- For all screen sizes ---------------------------------------------------*/
+@media all,print
+{
+	/*------------ CSS reset ------------*/
+	*
+	{
+		border: 0; margin: 0; padding: 0; vertical-align: top; box-sizing: border-box; list-style: none; color: inherit; font: inherit; font-size: inherit; line-height: normal;
+	}
+	/*------------ All divs are blocks by default ------------*/
+	div, footer
+	{
+		display: block;
+	}
+	/*------------ The html and body elements are always full-screen; the scrollable content is the .content div ------------*/
+	html, body
+	{
+		height: 100%; width: 100%; font: 400 16px Segoe UI,Helvetica,sans-serif; text-align:left; color:#FFF; background:#181818;
+	}
+	/*------------ All webpage content minus the footer. If most of it is empty, it still has a min-height of 100% pushing the footer ------------*/
+	#content
+	{
+		width: 100%; min-height: 100%; padding-bottom: 300px; margin-bottom: -300px;
+	}
+	/*------------ Footer is one only column wide ------------*/
+	footer
+	{
+		background: #151515; height: 300px; font-size: 25px; text-align: center;
+	}
+	/*------------ Content direct child elements will be stacked one on top of the other ------------*/
+	body > div, footer
+	{
+		width: 100%;
+	}
+	/*------------ Div elements will take as much width as necessary to fit contents ------------*/
+	div
+	{
+		width: fit-content;
+	}
+	/*------------ Content direct child elements will be spaced using divs ------------*/
+	.spacer120px
+	{
+		height: 120px; width: 100%;
+	}
+	/*------------ Content direct child elements will be spaced using divs ------------*/
+	.spacer30px
+	{
+		height: 30px; width: 100%;
+	}
+	/*------------ Content direct child elements will be spaced using divs ------------*/
+	.spacer15px
+	{
+		height: 15px; width: 100%;
+	}
+	b
+	{
+		font-weight: 500;
+	}
+	/*------------ White text ------------*/
+	.whiteTxt
+	{
+		color: #FFF;
+	}
+	/*------------ Black text ------------*/
+	.blackTxt
+	{
+		color: #000;
+	}
+	/*------------ Full width ------------*/
+	.fullWidth
+	{
+		width: 100%;
+	}
+	/*------------ Limits element width when on wide screens to a maximum and centers it ------------*/
+	.widthCap
+	{
+		max-width: 1140px; margin-left: auto; margin-right: auto; width: 100%;
+	}
+	/*------------ Menu on top of the page that measures one whole screen height and wide ------------*/
+	#fullScreenMenu
+	{
+		height: 100%; background: url("mediaTags/i.jpg") no-repeat top center/cover;
+	}
+	/*------------ Navbar with transparent darkish background containing site logo and buttons ------------*/
+	#navBar
+	{
+		width: 100%; background: rgba(0, 0, 0, 0.5);
+	}
+	/*------------ Width capped div inside ------------*/
+	#navBar > div
+	{
+		font-size: 0; line-height: 0; position: relative; padding: 90px 0 0 0; max-height: 90px; overflow: hidden; transition: max-height 0.6s; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="42"><rect x="1" y="1" width="40" height="40" rx="10" stroke="white" stroke-width="2px" fill="none"/><path d="M10 10L32 32M10 32L32 10" stroke="white" stroke-width="2px" stroke-linecap="round"/></svg>') no-repeat top 24px right 15px;
+	}
+	/*------------ When menu closed ------------*/
+	#navBar > .closedNavBarMenu
+	{
+		background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="42"><rect x="1" y="1" width="40" height="40" rx="10" stroke="white" stroke-width="2px" fill="none"/><path d="M10 13L32 13M10 21L32 21M10 29L32 29" stroke="white" stroke-width="2px" stroke-linecap="round"/></svg>') no-repeat top 24px right 15px;
+	}
+	/*------------ Logo and buttons inside ------------*/
+	#navBar > div > div
+	{
+		display: block; padding: 0 20px; font-size: 14px; font-weight: 600; line-height: 90px; width: 100%;
+	}
+	/*------------ Fist div element (logo) ------------*/
+	#navBar h1
+	{
+		position: absolute; font-size: 25px; top: 0; left: 0; font-weight: 500; display: block; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 81 92"><path d="M0 31L36 17L36 0L81 30L81 64L36 50L0 55L0 47L60 35L60 16L0 38ZM0 71L36 66L81 75L81 92L36 92L36 74L0 77Z" fill="%23D21242"/></svg>') no-repeat top 10px left 20px/auto 63px; width: auto; line-height: 24px; height: 90px; text-align: left; padding: 10px 0 0 94px;
+	}
+	#navBar strong, #navBar P
+	{
+		font-size: 18px; line-height: 18px; display: inline-block;
+	}
+	#navBar strong
+	{
+		color: #999;
+	}
+	/*------------ Banner in the middle of top fullScreenMenu ------------*/
+	#banner
+	{
+		position: absolute; bottom: 0; width: 100%; left: 0; padding: 0 15px 0 15px;
+	}
+	#banner > div
+	{
+		background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="-400 -400 1800 1800"><path d="M500,473.4c-14.6,0-29-5.5-40.1-16.6L26.6,23.6c-22.2-22.2-22.2-58.1,0-80.3c22.2-22.2,58.1-22.2,80.3,0L500,336.4l393.1-393.1c22.2-22.2,58.1-22.2,80.3,0c22.2,22.2,22.2,58.1,0,80.3L540.1,456.8C529,467.8,514.5,473.4,500,473.4 Z M500,773.4c-14.6,0-29-5.5-40.1-16.6L26.6,323.6c-22.2-22.2-22.2-58.1,0-80.3c22.2-22.2,58.1-22.2,80.3,0L500,636.4l393.1-393.1c22.2-22.2,58.1-22.2,80.3,0c22.2,22.2,22.2,58.1,0,80.3L540.1,756.8C529,767.8,514.5,773.4,500,773.4 " fill="white" stroke="black" stroke-width="20"/></svg>') no-repeat bottom center/ 120px auto; padding: 0 0 140px 0;
+	}
+	.bannerText
+	{
+		width: auto; padding: 4px 30px 10px 30px; font-size: 40px; line-height: 46px; font-family: system-ui; font-weight: 100; background: rgba(0,0,0,0.5); text-align: center;
+	}
+	/* Banner visible after scrolling stating last investments */
+	#investmentsBanner
+	{
+		text-align: center; font-size: 30px;
+	}
+	/* Container with properties inside */
+	#investments
+	{
+		text-align: center; font-size: 30px; max-width: 1140px; margin: 0 auto 0 auto; width: 100%;
+	}
+	#investments > div
+	{
+		display: inline-block; font-size: 16px; min-height:460px; width:100%; max-width:350px; padding: 12px 3px;
+	}
+	#investments > div > div
+	{
+		background: #EBF0F4 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"><text x="20" y="35">CARGANDO INVERSIÓN...</text></svg>') no-repeat top center/cover; display: block; width: 100%; height: 350px;
+	}	
+	#investments p
+	{
+		display: block; padding: 5px; color: white; line-height: 50px; font-size: 30px; width: 100%; background: #2F353D; text-align: center;
+	}
+	#investments p:last-child
+	{
+		color: black; line-height: normal; font-size: 16px; background: #EBF0F4; text-align: left;
+	}
+	#seeAllInvestments
+	{
+		background: #EBF0F4; width: 250px; color: black; font-size: 16px; font-weight: 500; line-height: 40px; margin: 0 auto; text-align: center;
+	}
+	/* Legal and Investments explanation section */
+	#legalAndInvestmentsExplained
+	{
+		background: #e9e9e9; color: #000; text-align: center;
+	}
+	#investmentsExplained, #legalExplained
+	{
+		padding: 24px 6px; display: inline-block; max-width: 480px; text-align: left;
+	}
+	h2
+	{
+		font-size: 40px; line-height: 46px; font-family: system-ui; font-weight: 100;
+	}
+	hr
+	{
+		content: ""; display: block; height: 3px; width: 100px; background: #999; margin: 30px 0;
+	}
+	h3
+	{
+		font-size: 25px; line-height: normal; font-family: system-ui; font-weight: 100;
+	}
+	#legalAndInvestmentsExplained span
+	{
+		color: #d21242; font-size: 14px; line-height: 34px;
+	}
+	/* Footer start */
+	footer
+	{
+		font-size: 16px;
+	}
+	h6
+	{
+		font-size: 20px;
+	}
+	footer > div
+	{
+		width: 100%; background: #444;
+	}
+	footer > div:first-child
+	{
+		background: #2F353D;
+	}
+	footer > div > div
+	{
+		text-align: center; padding: 20px 0;
+	}
+	footer > div > div > div
+	{
+		display: inline-block; text-align: left; width: 100%; max-width: 300px; padding: 20px 5px;
+	}
+	#emptyFooter1, #emptyFooter2
+	{
+		display: none;
+	}
+	footer > div > div > div > a
+	{
+		display: inline-block; width: 40px; height: 40px; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="4.4 4.4 15.4 19.5" ><path d="M7.73 23.218c0.11-.937-.227-2.482.025-3.566.217-.932 1.401-5.938 1.401-5.938s-.357-.715-.357-1.774c0-1.66.962-2.9 2.161-2.9 1.02 0 1.512.765 1.512 1.682 0 1.025-.653 2.557-.99 3.978-.281 1.189.597 2.159 1.769 2.159 2.123 0 3.756-2.239 3.756-5.471 0-2.861-2.056-4.86-4.991-4.86-3.398 0-5.393 2.549-5.393 5.184 0 1.027.395 2.127.889 2.726a.36.36 0 0 1 .083.343c-.091.378-.293 1.189-.332 1.355-.053.218-.173.265-.4.159-1.492-.694-2.424-2.875-2.424-4.627 0-3.769 2.737-7.229 7.892-7.229 4.144 0 7.365 2.953 7.365 6.899 0 4.117-2.595 7.431-6.199 7.431-1.211 0-2.348-.63-2.738-1.373 0 0-.599 2.282-.744 2.84-.282 1.084-1.064 2.456-2.349 3.535 Z" fill="white"></path></svg>') no-repeat center center/50% auto; border: 1px solid #FFF; border-radius: 20px; margin-left: 5px;
+	}
+	#logoLinkedIn
+	{
+		background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">%3Cstyle>rect,path,circle{fill:white}%3C/style><rect y="160" width="114.496" height="352"/><path d="M426.368,164.128c-1.216-0.384-2.368-0.8-3.648-1.152c-1.536-0.352-3.072-0.64-4.64-0.896 c-6.08-1.216-12.736-2.08-20.544-2.08c-66.752,0-109.088,48.544-123.04,67.296V160H160v352h114.496V320 c0,0,86.528-120.512,123.04-32c0,79.008,0,224,0,224H512V274.464C512,221.28,475.552,176.96,426.368,164.128z"/><circle cx="56" cy="56" r="56"/></svg>');
+
+	}
+	#logoFacebook
+	{
+		background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="42 0 470 490"><path d="M288,176v-64c0-17.664,14.336-32,32-32h32V0h-64c-53.024,0-96,42.976-96,96v80h-64v80h64v256h96V256h64l32-80H288z" fill="white"/></svg>');
+	}
+	#logoTwitter
+	{
+		background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M512,97.248c-19.04,8.352-39.328,13.888-60.48,16.576c21.76-12.992,38.368-33.408,46.176-58.016c-20.288,12.096-42.688,20.64-66.56,25.408C411.872,60.704,384.416,48,354.464,48c-58.112,0-104.896,47.168-104.896,104.992c0,8.32,0.704,16.32,2.432,23.936c-87.264-4.256-164.48-46.08-216.352-109.792c-9.056,15.712-14.368,33.696-14.368,53.056c0,36.352,18.72,68.576,46.624,87.232c-16.864-0.32-33.408-5.216-47.424-12.928c0,0.32,0,0.736,0,1.152c0,51.008,36.384,93.376,84.096,103.136c-8.544,2.336-17.856,3.456-27.52,3.456c-6.72,0-13.504-0.384-19.872-1.792c13.6,41.568,52.192,72.128,98.08,73.12c-35.712,27.936-81.056,44.768-130.144,44.768c-8.608,0-16.864-0.384-25.12-1.44C46.496,446.88,101.6,464,161.024,464c193.152,0,298.752-160,298.752-298.688c0-4.64-0.16-9.12-0.384-13.568C480.224,136.96,497.728,118.496,512,97.248z" fill="white"/></svg>');
+	}
+	#logoInstagram
+	{
+		background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">%3Cstyle>path,circle{fill:white}%3C/style><path d="M352,0H160C71.648,0,0,71.648,0,160v192c0,88.352,71.648,160,160,160h192c88.352,0,160-71.648,160-160V160C512,71.648,440.352,0,352,0z M464,352c0,61.76-50.24,112-112,112H160c-61.76,0-112-50.24-112-112V160C48,98.24,98.24,48,160,48h192c61.76,0,112,50.24,112,112V352z"/><path d="M256,128c-70.688,0-128,57.312-128,128s57.312,128,128,128s128-57.312,128-128S326.688,128,256,128z M256,336c-44.096,0-80-35.904-80-80c0-44.128,35.904-80,80-80s80,35.872,80,80C336,300.096,300.096,336,256,336z"/><circle cx="393.6" cy="118.4" r="17.056"/></svg>');
+	}
+	#logoYouTube
+	{
+		background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M490.24,113.92c-13.888-24.704-28.96-29.248-59.648-30.976C399.936,80.864,322.848,80,256.064,80c-66.912,0-144.032,0.864-174.656,2.912c-30.624,1.76-45.728,6.272-59.744,31.008C7.36,138.592,0,181.088,0,255.904C0,255.968,0,256,0,256c0,0.064,0,0.096,0,0.096v0.064c0,74.496,7.36,117.312,21.664,141.728c14.016,24.704,29.088,29.184,59.712,31.264C112.032,430.944,189.152,432,256.064,432c66.784,0,143.872-1.056,174.56-2.816c30.688-2.08,45.76-6.56,59.648-31.264C504.704,373.504,512,330.688,512,256.192c0,0,0-0.096,0-0.16c0,0,0-0.064,0-0.096C512,181.088,504.704,138.592,490.24,113.92z M192,352V160l160,96L192,352z" fill="white"/></svg>');
+	}
+/* - - - - - - - - - - - - - - - - - - - - - - - - For a specific screen size - - - - - - - - - - - - - - - - - - - - - - - - */
+}
+@media all and (min-width:460px)
+{
+	/*------------ Banner in the middle of top fullScreenMenu ------------*/
+	#banner
+	{
+		bottom: 30px;
+	}
+	#banner > div
+	{
+		background-position: bottom right 30px; padding: 0 0 0 15px;
+	}
+	.bannerText
+	{
+		width: 290px; font-size: 46px;
+	}
+/* - - - - - - - - - - - - - - - - - - - - - - - - For a specific screen size - - - - - - - - - - - - - - - - - - - - - - - - */
+}
+@media all and (min-width:605px)
+{
+	#emptyFooter1
+	{
+		display: inline-block;
+	}
+/* - - - - - - - - - - - - - - - - - - - - - - - - For a specific screen size - - - - - - - - - - - - - - - - - - - - - - - - */
+}
+@media all and (min-width:630px)
+{
+	/*------------ NavBar stops pushing buttons to it's bottom for a sliding menu ------------*/
+	#navBar > div, #navBar > .closedNavBarMenu
+	{
+		padding-top: 0; text-align: right; background-image: none;
+	}
+	/*------------ Menu items are inline and to the right ------------*/
+	#navBar > div > div
+	{
+		display: inline-block; width: auto;
+	}
+/* - - - - - - - - - - - - - - - - - - - - - - - - For a specific screen size - - - - - - - - - - - - - - - - - - - - - - - - */
+}
+@media all and (min-width:909px)
+{
+	#emptyFooter2
+	{
+		display: inline-block;
+	}
+/* - - - - - - - - - - - - - - - - - - - - - - - - For a specific screen size - - - - - - - - - - - - - - - - - - - - - - - - */
+}

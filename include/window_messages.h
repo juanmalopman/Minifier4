@@ -21,7 +21,7 @@ typedef enum windowMessagesCustom : UINT
 
 
 //
-// FUNCTIONS
+// FUNCTION PROTOTYPES
 //
 
 LRESULT CALLBACK windowMessagesCallback(_In_ HWND hWnd, _In_ UINT uMsg, _In_ WPARAM wParam, _In_ LPARAM lParam);

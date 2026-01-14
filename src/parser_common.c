@@ -189,7 +189,9 @@ char* parserCommonGetPointerToUTF8(char* data, size_t* pLen, bool isPath)
     // Scenario 1: "data" is a file path in the stack. We must read it.
     if (isPath)
     {
-        if (!fileUtilsReadFromFile((char*)data, &codePage, &rawBuffer, pLen))
+        char buffer[MAX_PATH] = { };
+        GetFullPathNameA(data, MAX_PATH, buffer, nullptr);
+        if (!fileUtilsReadFromFile(buffer, &codePage, &rawBuffer, pLen))
         {
             appLogPrint("Couldn't open specified input file.", APP_LOG_TO_CONSOLE);
             return nullptr;
@@ -245,7 +247,6 @@ static void internalSpawnParsingThread(_In_ StateGUI* pStateGUI, _In_ int extens
     } else {
         free(args); // Thread creation failed, clean up.
     }
-
 }
 
 static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
@@ -268,6 +269,9 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
     // See if extension matches radio button selection HTML vs CSS vs JS vs auto
     if (pMiniCfg->inputType == radioButtonAutodetect || pMiniCfg->inputType == extension)
     {
+        // Change working dir to specified path.
+        SetCurrentDirectoryA(inputPathOnly);
+
         internalSpawnParsingThread(pStateGUI, extension, true, (char*)pMiniCfg->inPath, 0, true);
         return true;
     }

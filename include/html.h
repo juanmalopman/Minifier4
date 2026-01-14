@@ -23,4 +23,4 @@ static constexpr char htmlTagError[] = "<!--ERROR-->";
 // FUNCTION PROTOTYPES
 //
 
-DWORD WINAPI htmlSpawnThread(_Inout_ LPVOID lpParam);
+DWORD WINAPI htmlSpawnThread(_In_ LPVOID lpParam);
