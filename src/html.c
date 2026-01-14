@@ -80,12 +80,18 @@ static bool internalAllocateChildThreadStructMem(_In_ int iChildThread, _Inout_ 
 {
     if (iChildThread % (nBlock + 1) == nBlock)
     {
-        // TODO: Check not to exceed size_t.
-        size_t newSize = (size_t)nBlock * ((iChildThread / nBlock) + 1) * sizeof(ChildThreads);
-        if (newSize)
+        // 1. Calculate the number of elements we want.
+        size_t numBlocks = (size_t)(iChildThread / nBlock) + 1;
+        
+        // 2. Check for overflow.
+        if (SIZE_MAX / nBlock < numBlocks || SIZE_MAX / sizeof(ChildThreads) < (numBlocks * nBlock))
         {
             appLogError("Size_t overflow allocating memory for helper CSS or JS thread.");
+            return false;
         }
+
+        size_t newSize = numBlocks * (size_t)nBlock * sizeof(ChildThreads);
+
         ChildThreads* temp = realloc(*pChildThreads, newSize);
         if (!temp)
         {
@@ -498,9 +504,8 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
     } 
 }
 
-static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ char** pO, _Out_ size_t* pTotalLen)
+static bool internalThreadQueue(_Inout_ ContextHTML* ctx)
 {
-    // If helper threads are queued.
     if (ctx->iChildThread)
     {
         // TODO: Make these settings available to the user.
@@ -558,20 +563,22 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
             if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
             {
                 appLogError("Helper threads timed out or failed in batch processing.");
-                free(pD); return;
+                return false;
             }
         }
     }
 
-    // 1. Merge CSS Contexts & Generate Output.
-    CssContext* masterCss = cssCreateContext();
-    if (!masterCss)
-    {
-        appLogError("Failed to allocate memory for masterCss context.");
-        free(pD); return;
-    }
+    return true;
+}
 
-    CssOutputs cssOut = { };
+static bool internalMergeContextsCSS(_In_ ContextHTML* ctx, _Out_ CssOutputs* outResult, _Out_ CssContext** outMaster)
+{
+    *outMaster = cssCreateContext();
+    if (!*outMaster)
+    {
+        appLogError("Failed to allocate memory for outMaster context.");
+        return false;
+    }
     
     // Iterate threads to merge CSS.
     for (int i = 0; i < ctx->iChildThread; i++)
@@ -581,16 +588,31 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
             CssContext* threadCtx = (CssContext*)ctx->pChildThreads[i].parsingThreadArgs.data;
             if (threadCtx)
             {
-                cssMergeContexts(masterCss, threadCtx);
+                cssMergeContexts(*outMaster, threadCtx);
                 cssDestroyContext(threadCtx);
             }
         }
     }
 
     // Generate Final Split CSS using the Critical Set we gathered parsing HTML.
-    cssOut = cssGenerateSplitOutput(masterCss, &ctx->critSet);
+    *outResult = cssGenerateSplitOutput(*outMaster, &ctx->critSet);
 
-    // 2. Calculate Total Size.
+    return true;
+}
+
+static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ char** pO, _Out_ size_t* pTotalLen)
+{
+    bool success = false;
+
+    // Execute any helper thread needed.
+    if (!internalThreadQueue(ctx)) goto cleanup;
+
+    // Merge CSS Contexts & Generate Output.
+    CssContext* masterCss = nullptr;
+    CssOutputs cssOut = { };
+    if (!internalMergeContextsCSS(ctx, &cssOut, &masterCss)) goto cleanup;
+
+    // Calculate Total Size.
     *pTotalLen = ctx->o;
     
     // Add CSS sizes (Above + Under).
@@ -606,7 +628,7 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
         }
     }
 
-    // 3. Allocate.
+    // Allocate.
     *pO = malloc(*pTotalLen + 1);
     if (!*pO)
     {
@@ -616,7 +638,7 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
     }
     char* pCursor = *pO;
 
-    // 4. Stitching.
+    // Stitching.
     
     // A. Header (HTML up to <style> insertion point).
     memcpy(pCursor, pD, ctx->iCSS); 
@@ -665,10 +687,20 @@ static void internalStitching(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _Out_ 
     pCursor += lenFooter;
     *pCursor = '\0'; // Null terminate
 
-    // 5. Cleanup.
-    cssDestroyContext(masterCss);
+    success = true;
+    
+    // Cleanup.
+cleanup:
+    if (masterCss) cssDestroyContext(masterCss);
     cssOutFree(&cssOut);
     free(pD);
+
+    if (!success && *pO)
+    {
+        free(*pO);
+        *pO = nullptr;
+        *pTotalLen = 0;
+    }
 }
 
 DWORD WINAPI htmlSpawnThread(LPVOID lpParam)

@@ -803,8 +803,7 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
     else
     {
         // Helper mode: Return the CONTEXT struct, not a string.
-        // We cast the pointer to char* just to pass it back through the generic struct.
-        args->data = (char*)ctx;
+        args->data = ctx;
     }
 
     return 0;

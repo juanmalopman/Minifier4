@@ -17,7 +17,7 @@
 typedef struct ParsingThreadArgs{
     StateGUI* pStateGUI;
     bool mainParsingThread;
-    char* data;
+    void* data;
     size_t len;
     bool isPath;
 } ParsingThreadArgs;
