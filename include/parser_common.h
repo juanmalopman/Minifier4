@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h> // sprintf_s, char, etc.
 #include "main_window.h"
+#include "css.h"
 
 //
 // STRUCTS
@@ -20,6 +21,8 @@ typedef struct ParsingThreadArgs{
     void* data;
     size_t len;
     bool isPath;
+    bool mangle;
+    SetOfClassesAndIDs* pCritSet;
 } ParsingThreadArgs;
 
 //
@@ -29,7 +32,8 @@ typedef struct ParsingThreadArgs{
 char* parserCommonGetPointerToUTF8( _Inout_ char* data, _Inout_ size_t* pLen, _In_ bool isPath);
 void parserCommonFinished(_Inout_ StateGUI* pStateGUI, _In_ char* minified, _In_ size_t len);
 void parserCommonRun(_Inout_ StateGUI* pStateGUI);
-void parserCommonGetMangled(_In_ int index, _Out_ char* buffer,_In_ bool rand);
+void parserCommonMangledRandSetting(_In_ bool rand);
+void parserCommonGetMangled(_In_ int index, _Out_ char* buffer);
 
 //
 // INLINE FUNCTIONS

@@ -47,16 +47,19 @@ typedef struct ContextHTML
     int iChildThread;
     ChildThreads* pChildThreads;
     
-    // Position markers
-    size_t iCSS;     // Where <style> goes in head
-    size_t iFold;    // Where the fold comment was found
-    size_t iJS;      // Where <script> goes (usually body end)
+    // Position markers.
+    size_t iCSS;     // Where <style> goes in head.
+    size_t iFold;    // Where the fold comment was found.
+    size_t iJS;      // Where <script> goes (usually body end).
     size_t iError[2];
-    size_t o;        // Output write cursor index
+    size_t o;        // Output write cursor index.
     
-    // CSS Logic
-    SetOfClassesAndIDs critSet; // Stores classes found "Above the Fold"
-    bool isUnderFold;            // State flag during parsing
+    // CSS Logic.
+    SetOfClassesAndIDs critSet; // Stores classes found "Above the Fold".
+    bool isUnderFold;           // State flag during parsing.
+
+    bool mangle; // Current config.
+
 } ContextHTML;
 
 //
@@ -117,6 +120,8 @@ static void internalQueueHelperThread(_Inout_ ContextHTML* ctx, _In_ bool isPath
     thread->parsingThreadArgs.data = buffer;
     thread->parsingThreadArgs.len = bufferLen;
     thread->parsingThreadArgs.isPath = isPath;
+    thread->parsingThreadArgs.mangle = ctx->mangle;
+    thread->parsingThreadArgs.pCritSet = &ctx->critSet;
     thread->isCSS = isCSS;
     
     ctx->iChildThread++;
@@ -504,10 +509,32 @@ static void internalParseHTML(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _In_ s
     } 
 }
 
+static void internalMangledNamesSetup(_In_ ContextHTML* ctx)
+{
+    if (ctx->mangle)
+    {
+        // Get ready the mangled classes and IDs. // TODO: First get the "extra" classes and IDs from JS.
+                                                  // TODO: Evaluate just any call to parserCommonGetMangled iterating from the last index
+                                                  // up to the requested one, in a thead safe way. Current way is faster.
+        char dummyBuff[3];
+        size_t maxIndexClasses = ctx->critSet.classesAbove.count + ctx->critSet.classesUnder.count;
+        size_t maxIndexIds = ctx->critSet.idsAbove.count + ctx->critSet.idsUnder.count;
+        size_t maxIndex = maxIndexClasses > maxIndexIds ? maxIndexClasses : maxIndexIds;
+
+        for (size_t i = 0; i < maxIndex; i++)
+        {
+            parserCommonGetMangled(i, dummyBuff); // This ensures any future call is ordered as the function needs.
+        }
+    }
+}
+
 static bool internalThreadQueue(_Inout_ ContextHTML* ctx)
 {
     if (ctx->iChildThread)
     {
+        // Prepare for any mangling CSS threads might need. // TODO: Call after JS threads and before CSS threads.
+        internalMangledNamesSetup(ctx);
+
         // TODO: Make these settings available to the user.
         static constexpr DWORD dwTotalTimeout = 3000; // 3 seconds total for all batches.
         static constexpr int BATCH_SIZE = 32; // Max number of threads to spawn at a time. Must be <= 64 (MAXIMUM_WAIT_OBJECTS).
@@ -719,6 +746,7 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
 
     ContextHTML contextHTML = { };
     ContextHTML* ctx = &contextHTML;
+    ctx->mangle = argsStack.mangle;
     ctx->pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
 
     if (!ctx->pChildThreads)

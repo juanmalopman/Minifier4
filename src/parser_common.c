@@ -232,6 +232,7 @@ static void internalSpawnParsingThread(_In_ StateGUI* pStateGUI, _In_ int extens
     args->data = data;
     args->len = len;
     args->isPath = isPath;
+    args->mangle = pStateGUI->pMiniCfg->mangle;
 
     HANDLE hThread = CreateThread(
         NULL,               // Default security attributes.
@@ -594,7 +595,7 @@ static NameGenerator* internalInitGenerator()
 static bool internalNameIsAllowedInJS(_In_ const char* mangledName)
 {
     bool nameAllowed = true;
-    for (uint16_t i = 0; i < sizeof(prohibitedNamesJS); i++)
+    for (uint16_t i = 0; i < 4/*sizeof(prohibitedNamesJS)*/; i++)
     {
         if (!strcmp(mangledName, prohibitedNamesJS[i])) nameAllowed = false;
     }
@@ -618,8 +619,16 @@ static BOOL CALLBACK internalGetMangledHelpRunOnce([[maybe_unused]] _In_opt_ PIN
     gen = internalInitGenerator();
     return TRUE;
 }
-void parserCommonGetMangled(int index, char* buffer, bool rand)
+
+static bool mangledRand = true;
+void parserCommonMangledRandSetting(bool rand)
 {
+    mangledRand = rand;
+}
+
+void parserCommonGetMangled(int index, char* buffer)
+{
+
     // Ensure gen is initialized in a thread-safe way.
     InitOnceExecuteOnce(&onceFlag, internalGetMangledHelpRunOnce, NULL, NULL);
 
@@ -628,7 +637,7 @@ void parserCommonGetMangled(int index, char* buffer, bool rand)
     char* activeStartWchars = gen->startWchars;
     char* activeOtherWchars = gen->otherWchars;
 
-    if (rand)
+    if (mangledRand)
     {
         activeSkippedNameIndexes = skippedNameIndexesRand;
         activepNamesSkippedCount = &namesSkippedCountRand;

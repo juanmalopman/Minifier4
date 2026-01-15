@@ -47,6 +47,8 @@ typedef struct CssContext
     CssAtRuleGroup* groups;
     size_t groupCount;
     size_t groupCap;
+    SetOfClassesAndIDs* pCritSet;
+    bool mangle;
 } CssContext;
 
 //
@@ -151,7 +153,7 @@ static CssRule* internalGetNextRuleSlot(_Inout_ CssAtRuleGroup* grp)
     return &grp->rules[grp->ruleCount++];
 }
 
-// Helper to see if space is required inside a selector or declaration block.
+// Helper to see if space is required inside a selector, declaration block or at-rule signature.
 static inline bool internalSpaceIsOptional(_In_ char c)
 {
     if (parserCommonIsSpace(c)) return true;
@@ -837,6 +839,136 @@ void cssOutFree(CssOutputs* out)
     if (out->underCSS != nullptr) free(out->underCSS);
 }
 
+static inline bool internalIsIdentifierChar(char c)
+{
+    return isalnum((unsigned char)c) || c == '-' || c == '_';
+}
+
+// Helper to search for a string slice in a SelectorList.
+// Returns true if found and sets *outIdx.
+static bool internalFindInList(
+    _In_ const SelectorList* list, 
+    _In_ const char* str, 
+    _In_ size_t len, 
+    _Out_ size_t* outIdx)
+{
+    for (size_t i = 0; i < list->count; i++)
+    {
+        const char* item = list->items[i];
+        
+        // Check length first, then content.
+        if (item && strlen(item) == len && memcmp(item, str, len) == 0)
+        {
+            *outIdx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+
+static void internalMangleSelectorString(_In_ CssContext* ctx, _Inout_ char* selector)
+{
+    if (selector == nullptr) return;
+
+    size_t r = 0; // Read head.
+    size_t w = 0; // Write head.
+    size_t len = strlen(selector);
+
+    while (r < len)
+    {
+        // Detect start of Class (.) or ID (#).
+        if (selector[r] == '.' || selector[r] == '#')
+        {
+            char type = selector[r];
+            size_t start = r + 1;
+            size_t end = start;
+
+            // Determine length of the identifier.
+            while (end < len && internalIsIdentifierChar(selector[end])) end++;
+
+            size_t idLen = end - start;
+            if (!(idLen > 0)) return;
+
+            bool found = false;
+            size_t foundIdx = 0;
+            size_t mangleIdx = 0;
+
+            // Determine which lists to search based on type.
+            SelectorList* listAbove = (type == '.') ? &ctx->pCritSet->classesAbove : &ctx->pCritSet->idsAbove;
+            SelectorList* listUnder = (type == '.') ? &ctx->pCritSet->classesUnder : &ctx->pCritSet->idsUnder;
+
+            // 1. Search "Above" list.
+            if (internalFindInList(listAbove, &selector[start], idLen, &foundIdx))
+            {
+                mangleIdx = foundIdx;
+                found = true;
+            }
+            // 2. Search "Under" list.
+            else if (internalFindInList(listUnder, &selector[start], idLen, &foundIdx))
+            {
+                // Logic Requirement 2: Index is 'Above' count + 'Under' index
+                mangleIdx = listAbove->count + foundIdx;
+                found = true;
+            }
+
+            if (found)
+            {
+                // 1. Get the mangled replacement.
+                char mangledBuf[64] = { }; // TODO: More than enough for a class or ID, but make the swap in place.
+                parserCommonGetMangled((int)mangleIdx, mangledBuf);
+                size_t mangledLen = strlen(mangledBuf);
+
+                // 2. Leave the prefix (. or #).
+                w++;
+
+                // 3. Write the mangled name. // TODO: Check the name is shorter or allocate extra memory for selectors from the get-go.
+                                              // Allocating something like 1.5x the number of chars for a selector would make it almost imposible to overflow. 
+                memcpy(&selector[w], mangledBuf, mangledLen);
+                w += mangledLen;
+
+                // 4. Advance Read Head past the original identifier.
+                r = end;
+                continue; 
+            }
+        }
+
+        // If not a class/id, or not found in list, copy character as-is
+        selector[w++] = selector[r++];
+    }
+
+    // Null-terminate the string at its new (potentially shorter) length
+    selector[w] = '\0';
+}
+
+// Loop through all rule set selectors and mangle them.
+static void internalMangleNames(_In_ CssContext* ctx)
+{
+    // Safety checks.
+    if (ctx == nullptr || !ctx->mangle || ctx->pCritSet == nullptr) return;
+
+    // Iterate over all At-Rule groups.
+    for (size_t g = 0; g < ctx->groupCount; g++)
+    {
+        CssAtRuleGroup* group = &ctx->groups[g];
+
+        if (group->rules != nullptr)
+        {
+            // Iterate over all rule sets in this group.
+            for (size_t r = 0; r < group->ruleCount; r++)
+            {
+                CssRule* rule = &group->rules[r];
+
+                // Mangle the selector.
+                if (rule->selector != nullptr)
+                {
+                    internalMangleSelectorString(ctx, rule->selector);
+                }
+            }
+        }
+    }
+}
+
 DWORD WINAPI cssSpawnThread(LPVOID lpParam)
 {
     ParsingThreadArgs* args = (ParsingThreadArgs*)lpParam;
@@ -857,7 +989,14 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
         free(args);
         return 0;
     }
+
+    ctx->pCritSet = args->pCritSet;
+    ctx->mangle = args->mangle;
+
     internalParseRawCSS(ctx, "", pD, args->len);
+
+    internalMangleNames(ctx); // TODO: If main thread and mangle is enabled, maybe mangle nonetheless?
+
     free(pD);
 
     // If we are the MAIN parsing thread (Standalone mode), we output everything to Above.

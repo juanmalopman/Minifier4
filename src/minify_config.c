@@ -14,6 +14,7 @@
 #include "app_logging.h"
 #include "main_window.h"
 #include "file_utils.h"
+#include "parser_common.h"
 
 //
 // ENUMS
@@ -163,6 +164,7 @@ static void internalLoadDefaults(_Out_ MiniCfg* pMiniCfg, _In_ char* fullPath)
     pMiniCfg->fallbackToPrevFile = false;
     pMiniCfg->mangle = true;
     pMiniCfg->randomMangle = true;
+    parserCommonMangledRandSetting(pMiniCfg->randomMangle);
     pMiniCfg->outOpt = radioButtonOutFileStrip;
     pMiniCfg->stripSeg[0] = L'\0';
     pMiniCfg->outPath[0] = L'\0';
@@ -340,12 +342,14 @@ static bool internalHelperParseCLI( _In_ StateGUI* pStateGUI, _Inout_ MiniCfg* p
         case ARG_rm:
         {
             pMiniCfg->randomMangle = true;
+            parserCommonMangledRandSetting(pMiniCfg->randomMangle);
             break;
         }
         case ARG_no_random_mangle:
         case ARG_nrm:
         {
             pMiniCfg->randomMangle = false;
+            parserCommonMangledRandSetting(pMiniCfg->randomMangle);
             break;
         }
         case ARG_html:

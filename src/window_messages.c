@@ -158,7 +158,12 @@ LRESULT CALLBACK windowMessagesCallback(HWND hWnd, UINT uMsg, WPARAM wParam, LPA
         EnableWindow(GetDlgItem(hWnd, checkboxRandomMangle), pStateGUI->pMiniCfg->mangle); // Disable Randomize mangling if Mangle is unchecked.
         break;
         }
-        case checkboxRandomMangle: pStateGUI->pMiniCfg->randomMangle = IsDlgButtonChecked(hWnd, checkboxRandomMangle); break;
+        case checkboxRandomMangle:
+        {
+            pStateGUI->pMiniCfg->randomMangle = IsDlgButtonChecked(hWnd, checkboxRandomMangle);
+            parserCommonMangledRandSetting(pStateGUI->pMiniCfg->randomMangle);
+            break;
+        }
         case checkboxFilename: pStateGUI->pMiniCfg->outFilename = IsDlgButtonChecked(hWnd, checkboxFilename); break;
         }   
 
