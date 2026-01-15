@@ -231,7 +231,7 @@ static void internalProcessClassOrId(_Inout_ ContextHTML* ctx, _Inout_ char* pD,
     char tempName[maxLenClassOrID]; 
     size_t tempLen = 0;
     
-    // *idx is currently at the opening quote
+    // *idx is currently at the opening quote.
     (*idx)++; 
     
     for (; *idx < len - 1; (*idx)++)
@@ -247,11 +247,12 @@ static void internalProcessClassOrId(_Inout_ ContextHTML* ctx, _Inout_ char* pD,
                 tempName[tempLen] = 0;
                 cssRecordSelector(&ctx->critSet, tempName, isId, !ctx->isUnderFold);
 
-                // Write space if needed
+                // Write space if needed.
                 if (ctx->o > 0 && pD[ctx->o-1] != '\"' && pD[ctx->o-1] != '\'')
                 {
                     pD[ctx->o++] = ' ';
                 }
+                // TODO: If mangled is enabled, write the mangled name instead.
                 memcpy(&pD[ctx->o], tempName, tempLen);
                 ctx->o += tempLen;
                 tempLen = 0;

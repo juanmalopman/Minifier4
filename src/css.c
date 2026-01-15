@@ -153,7 +153,7 @@ static CssRule* internalGetNextRuleSlot(_Inout_ CssAtRuleGroup* grp)
     return &grp->rules[grp->ruleCount++];
 }
 
-// Helper to see if space is required inside a selector, declaration block or at-rule signature.
+// Helper to see if space is required inside a selector, declaration block or atomic at-rule signature.
 static inline bool internalSpaceIsOptional(_In_ char c)
 {
     if (parserCommonIsSpace(c)) return true;
@@ -293,6 +293,67 @@ static bool internalIsSplittableGroup(_In_ const char* start, _In_ size_t len)
 // Forward declaration needed for recursion.
 static void internalParseRawCSS(_Inout_ CssContext* ctx, _In_ const char* currentSig, _In_ char* data, _In_ size_t len);
 
+// Helper to see if space is required inside a non-atomic at-rule signature.
+static inline bool internalSpaceIsOptionalAtRule(_In_ char c)
+{
+    if (parserCommonIsSpace(c)) return true;
+    
+    switch (c)
+    {
+        case ')':
+        case '<': case '>':
+        case '[': case ']':
+        case '=':
+        case ',':
+        case ':': 
+        case ';':
+        case '@': // Atomic at-rules are treated as selectors.
+            return true;
+        default: 
+            return false;
+    }
+}
+
+static void internalAtRuleSignatureParse(_In_ const char* src, _In_ size_t len, _Out_ char* dest)
+{
+    // TODO: Make it so that at-rules meaning the same but spelled differently get merged.
+    //       A brute force way could be enforcing a max-width before min width etc order.
+    size_t i = 0;
+    size_t o = 0;
+    for (; i < len; i++)
+    {
+        if (src[i] == '/' && i + 1 < len && src[i + 1] == '*') // Comment detected.
+        {
+            for (; i < len; ++i) if (src[i] == '/' && src[i - 1] == '*') break;
+            continue;
+        }
+
+        if (!parserCommonIsSpace(src[i]))
+        {
+            dest[o++] = src[i];
+            continue;
+        }
+
+        if (i + 1 < len)
+        {
+            if (internalSpaceIsOptionalAtRule(src[i + 1])) continue; // Skip adjacent spaces.
+                                                                     // The space before '(' of "and (max-something..." is preserved.
+        }
+        else if (src[i] != '/') continue; // Skip trailing space.
+        else dest[o++] = src[i]; // A needed '/'.
+
+        if (o)
+        {
+            if (internalSpaceIsOptional(dest[o - 1])) continue;
+        }
+        else continue; // Skip leading space
+
+        dest[o++] = src[i];
+    }
+
+    dest[o] = '\0';
+}
+
 // Handles @media, @supports, etc, that might be nested one inside the other.
 // Extracts signature, combines with parent, and recurses.
 static void internalParseRecursiveGroup(
@@ -317,7 +378,7 @@ static void internalParseRecursiveGroup(
     }
 
     // Copy, optimize and null terminate.
-    internalRuleSetParse(data + i, sigLen, localSig); // TODO: Extract and match common at-rule specs to merge them even if they are spelled in a different way.
+    internalAtRuleSignatureParse(data + i, sigLen, localSig);
 
     // 2. Combine with Parent Signature. // TODO: Implement a way to nest media queries instead of "duplicating" parent signatures in the output.
     char* combinedSig = nullptr;
