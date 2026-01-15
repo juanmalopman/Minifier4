@@ -245,14 +245,22 @@ static void internalProcessClassOrId(_Inout_ ContextHTML* ctx, _Inout_ char* pD,
             if (tempLen > 0)
             {
                 tempName[tempLen] = 0;
-                cssRecordSelector(&ctx->critSet, tempName, isId, !ctx->isUnderFold);
 
-                // Write space if needed.
+                static constexpr size_t INVALID_INDEX = (size_t)-1;
+                size_t mangleIndex = cssRecordSelector(&ctx->critSet, tempName, isId, !ctx->isUnderFold);
+
+                // Write space if needed (multiple classes for one HTML element).
                 if (ctx->o > 0 && pD[ctx->o-1] != '\"' && pD[ctx->o-1] != '\'')
                 {
                     pD[ctx->o++] = ' ';
                 }
-                // TODO: If mangled is enabled, write the mangled name instead.
+
+                if (ctx->mangle && mangleIndex != INVALID_INDEX)
+                {
+                    parserCommonGetMangled(mangleIndex, tempName);
+                    tempLen = strlen(tempName);
+                }
+
                 memcpy(&pD[ctx->o], tempName, tempLen);
                 ctx->o += tempLen;
                 tempLen = 0;

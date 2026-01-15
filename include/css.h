@@ -57,7 +57,7 @@ DWORD WINAPI cssSpawnThread(_Inout_ LPVOID lpParam);
 CssContext* cssCreateContext();
 void cssDestroyContext(_In_ CssContext* ctx);
 void cssMergeContexts(_Inout_ CssContext* dest, _Inout_ CssContext* src);
-void cssRecordSelector(_Inout_ SetOfClassesAndIDs* set, _In_z_ const char* name, _In_ bool isId, _In_ bool isAbove);
+size_t cssRecordSelector(_Inout_ SetOfClassesAndIDs* set, _In_z_ const char* name, _In_ bool isId, _In_ bool isAbove);
 void cssFreeCriticalSet(_Inout_ SetOfClassesAndIDs* set);
 void cssOutFree(_Inout_ CssOutputs* out);
 CssOutputs cssGenerateSplitOutput(_In_ CssContext* ctx, _In_ SetOfClassesAndIDs* criticalSet);

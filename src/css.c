@@ -127,7 +127,7 @@ static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const ch
     
     CssAtRuleGroup* grp = &ctx->groups[ctx->groupCount];
     
-    char* dupSig = _strdup(sig);
+    char* dupSig = strdup(sig);
     if (!dupSig) return nullptr; // Fail if string duplication fails
 
     grp->querySignature = dupSig;
@@ -217,7 +217,13 @@ static void internalStoreRuleSet(_Inout_ CssAtRuleGroup* grp, _In_ const char* s
     CssRule* r = internalGetNextRuleSlot(grp);
     if (r == nullptr) return;
     
-    r->selector = malloc(selLen + 1);
+    // Mangling will change selector length, possibly swapping something like ".a" for ".aa".
+    // malloc() will probably allocate 16 bit chunks even if asking for less.
+    // Small allocations like for ".a" can turn into ".aaaa" only with more than 150.000 unique classes.
+    // Longer selectors will for sure become shorter after minification, or worst case, stay about the same length.
+    // TODO: Migrate mangling here to avoid allocating more than necessary, and have a different allocation strategy with pointers to pointers in chunk buffers.
+    //       If not just use realloc() conditionally when mangling.
+    r->selector = malloc(MAX(selLen * 1.5, 16));
     if (r->selector != nullptr)
     {
         internalRuleSetParse(sel, selLen, r->selector);
@@ -364,6 +370,7 @@ static void internalParseRecursiveGroup(
                         _Inout_ size_t* ioIdx,
                         _In_ size_t preludeEnd )
 {
+    // TODO: Implement max recursion depth.
     size_t i = *ioIdx;
 
     // 1. Extract Local Signature.
@@ -400,7 +407,7 @@ static void internalParseRecursiveGroup(
     }
     else
     {
-        combinedSig = _strdup(localSig);
+        combinedSig = strdup(localSig);
     }
     free(localSig);
 
@@ -574,17 +581,18 @@ static bool internalEnsureArenaSpace(_Inout_ SelectorList* list, _In_ size_t req
     return true;
 }
 
+static constexpr size_t INVALID_INDEX = (size_t)-1;
 // Helper to append selector string to a specific list.
-static void internalListAppend(_Inout_ SelectorList* list, _In_ const char* str)
+static size_t internalListAppend(_Inout_ SelectorList* list, _In_ const char* str)
 {
     size_t strLen = strlen(str);
     size_t required = strLen + 1; // +1 for null terminator
 
     // 1. Ensure we have an arena block with space.
-    if (!internalEnsureArenaSpace(list, required)) return;
+    if (!internalEnsureArenaSpace(list, required)) return INVALID_INDEX;
 
     // 2. Ensure Pointer Array has space.
-    if (!internalEnsurePointerArraySpace(list)) return;
+    if (!internalEnsurePointerArraySpace(list)) return INVALID_INDEX;
 
     // 3. Copy String into Arena
     char* dest = list->curr->data + list->curr->used;
@@ -594,44 +602,59 @@ static void internalListAppend(_Inout_ SelectorList* list, _In_ const char* str)
 
     // 4. Store Pointer
     list->items[list->count++] = dest;
+
+    return list->count - 1;
 }
 
 // Helper to check if a specific class or id name exists in a list.
-static bool internalListContains(_In_ SelectorList* list, _In_ const char* name, _In_ size_t len)
+static size_t internalListContains(_In_ SelectorList* list, _In_ const char* name, _In_ size_t len)
 {
-    if (!list || !list->items) return false;
+    size_t index;
+
+    if (!list || !list->items) return INVALID_INDEX;
     for (size_t i = 0; i < list->count; i++)
     {
-        // We use check length first to avoid full strcmp if not needed
+        // TODO: Use check length first to avoid full strcmp if not needed?
         const char* item = list->items[i];
         if (strncmp(item, name, len) == 0 && item[len] == '\0')
         {
-            return true;
+            index = i;
+            return index;
         }
     }
-    return false;
+    return INVALID_INDEX;
 }
 
-void cssRecordSelector(SetOfClassesAndIDs* set, const char* name, bool isId, bool isAbove)
+size_t cssRecordSelector(SetOfClassesAndIDs* set, const char* name, bool isId, bool isAbove)
 {
     // Calculate length once for all checks.
     size_t nameLen = strlen(name);
+
+    size_t index = INVALID_INDEX; 
 
     if (isAbove)
     {
         // We only check the specific "Above" list.
         SelectorList* target = isId ? &set->idsAbove : &set->classesAbove;
 
+        index = internalListContains(target, name, nameLen);
+
         // Only add if it doesn't already exist.
-        if (!internalListContains(target, name, nameLen)) internalListAppend(target, name);
+        if (index == INVALID_INDEX) index = internalListAppend(target, name);
+
+        return index;
     }
     else
     {
         SelectorList* aboveList = isId ? &set->idsAbove : &set->classesAbove;
-        if (internalListContains(aboveList, name, nameLen)) return;
+        index = internalListContains(aboveList, name, nameLen);
+        if (index != INVALID_INDEX) return index;
 
         SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
-        if (!internalListContains(underList, name, nameLen)) internalListAppend(underList, name);
+        index = internalListContains(underList, name, nameLen);
+        if (index == INVALID_INDEX) index = internalListAppend(underList, name);
+
+        return index + aboveList->count;
     }
 }
 
