@@ -12,6 +12,7 @@
 #include "css.h"
 #include "parser_common.h"
 #include "app_logging.h"
+#include "html.h"
 
 //
 // STRUCTS
@@ -853,85 +854,146 @@ void cssFreeCriticalSet(SetOfClassesAndIDs* set)
     internalListFree(&set->idsUnder);
 }
 
+typedef enum : int
+{
+    FOOTER_STATE_UNKNOWN,
+    FOOTER_STATE_POISON, // Registered as non-critical
+    FOOTER_STATE_SAFE    // Not registered (Critical)
+} FooterCheckState;
+static inline bool internalIsFooterPoisoned(FooterCheckState* state, SetOfClassesAndIDs* set)
+{
+    if (*state == FOOTER_STATE_UNKNOWN)
+    {
+        // The "footer" token never gets mangled, so set the last argument of internalListContains to false.
+        if (internalListContains(&set->idsUnder, footerTagText, sizeof(footerTagText) - 1, 0, false) != INVALID_INDEX) *state = FOOTER_STATE_POISON;
+        
+        else *state = FOOTER_STATE_SAFE;
+    }
+    return (*state == FOOTER_STATE_POISON);
+}
+
+// Checks if the current word at the cursor is exactly "footer".
+static inline bool internalIsFooterToken(const char* cursor, const char* segmentStart)
+{
+    // 1. Check bounds and string match.
+    if (strncmp(cursor, footerTagText, sizeof(footerTagText) - 1) != 0) return false;
+
+    // 2. Check Start-of-Word boundary.
+    if (cursor > segmentStart)
+    {
+        unsigned char prev = (unsigned char)*(cursor - 1);
+        if (isalnum(prev) || prev == '-' || prev == '_') return false;
+    }
+
+    // 3. Check End-of-Word boundary.
+    unsigned char after = (unsigned char)*(cursor +  sizeof(footerTagText) - 1);
+    if (isalnum(after) || after == '-' || after == '_') return false;
+
+    return true;
+}
+
+// Parses a Class or ID at the current cursor position.
+static inline bool internalIsCriticalCheckClassOrId(_Inout_ const char** cursorPtr, const char* segmentStart, SetOfClassesAndIDs* set, bool mangled)
+{
+    const char* cursor = *cursorPtr;
+    bool isId = (*cursor == '#');
+
+    // Check for :not() context (looking backwards)
+    bool isInsideNot = false;
+    if (cursor - segmentStart >= 5)
+    {
+        if (strncmp(cursor - 5, ":not(", 5) == 0) isInsideNot = true;
+    }
+
+    cursor++; // Skip '.' or '#'
+    const char* nameStart = cursor;
+    size_t nameLen = 0;
+
+    // Consume identifier
+    while (*cursor && (isalnum((unsigned char)*cursor) || *cursor == '-' || *cursor == '_'))
+    {
+        cursor++;
+        nameLen++;
+    }
+
+    // Update caller's cursor
+    *cursorPtr = cursor;
+
+    if (nameLen > 0 && !isInsideNot)
+    {
+        SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
+        size_t countAbove = isId ? set->idsAbove.count : set->classesAbove.count;
+
+        if (internalListContains(underList, nameStart, nameLen, countAbove, mangled) != INVALID_INDEX)
+        {
+            return true; // Found a poison (non-critical) selector
+        }
+    }
+
+    return false;
+}
+
 static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndIDs* set, _In_ bool mangled)
 {
-    if (!set) return true; // Default to critical if no data.
+    if (!set) return true;
 
     const char* cursor = selector;
-    
-    // Iterate through comma-separated segments (e.g., "div.a, div.b").
+    FooterCheckState footerState = FOOTER_STATE_UNKNOWN;
+
     while (*cursor)
     {
         // Skip leading whitespaces.
         while (*cursor && parserCommonIsSpace((unsigned char)*cursor)) cursor++;
         if (*cursor == '\0') break;
 
-        bool segmentIsCritical = true; // Assume it's critical until proved otherwise.
+        bool segmentIsCritical = true;
         const char* segmentStart = cursor;
 
-        // Scan the current segment.
+        // Process one segment.
         while (*cursor && *cursor != ',')
         {
-            // Look for Class (.) or ID (#) start.
             if (*cursor == '.' || *cursor == '#')
             {
-                bool isId = (*cursor == '#');
-                
-                // Check if this is inside a :not(...) pseudo-class looking backwards from current position.
-                // 1. We need at least 5 chars back: ":not(".
-                bool isInsideNot = false;
-                if (cursor - segmentStart >= 5)
+                // Delegate to helper. Note: We pass address of cursor to allow modification.
+                if (internalIsCriticalCheckClassOrId(&cursor, segmentStart, set, mangled))
                 {
-                    // Simple check: looking for ":not(" immediately preceding.
-                    // TODO: Catch ":not( div " (with whitespaces).
-                    if (strncmp(cursor - 5, ":not(", 5) == 0)
-                    {
-                        isInsideNot = true;
-                    }
+                    segmentIsCritical = false;
+                    // Fast-forward to end of segment.
+                    while (*cursor && *cursor != ',') cursor++;
+                    break;
                 }
-
-                cursor++; // Move past '.' or '#'
-                
-                // Extract the name.
-                const char* nameStart = cursor;
-                size_t nameLen = 0;
-                while (*cursor && (isalnum((unsigned char)*cursor) || *cursor == '-' || *cursor == '_'))
+                // internalIsCriticalCheckClassOrId advanced the cursor past the name, loop continues.
+                continue;
+            }
+            
+            // This code is only reached as the first char of a segment. Only check for "footer" if we see an 'f'.
+            if (*cursor == 'f')
+            {
+                if (internalIsFooterToken(cursor, segmentStart))
                 {
-                    cursor++;
-                    nameLen++;
-                }
-
-                if (nameLen > 0 && !isInsideNot)
-                {
-                    // Is it in the "Under" list?
-                    SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
-                    size_t countAbove = isId ? set->idsAbove.count : set->classesAbove.count;
-                    // Checking an "under" list with internalListContains mandates the 4th argument "offset" to be countAbove.
-                    if (internalListContains(underList, nameStart, nameLen, countAbove, mangled) != INVALID_INDEX)
+                    // Lazy load the state only if we actually found "footer".
+                    if (internalIsFooterPoisoned(&footerState, set))
                     {
                         segmentIsCritical = false;
-                        
-                        // Fast-forward to next comma
                         while (*cursor && *cursor != ',') cursor++;
                         break;
                     }
+                    
+                    // If footer is safe, skip past it to avoid re-scanning.
+                    cursor += sizeof(footerTagText) - 1;
+                    continue;
                 }
-                // Don't increment cursor here, the inner while loop did it.
-                continue; 
             }
-            
+
             cursor++;
         }
 
-        // We finished one segment (or broke out because it was poisoned).
-        // If this segment is still marked critical, the whole rule is valid/critical.
         if (segmentIsCritical) return true;
 
-        // If we hit a comma, skip it and continue to the next segment
+        // Move to next segment
         if (*cursor == ',') cursor++;
     }
 
-    // If we checked all segments and none were critical (all were poisoned), return false.
     return false;
 }
 
@@ -1057,8 +1119,10 @@ CssOutputs cssGenerateSplitOutput(CssContext* ctx, SetOfClassesAndIDs* set)
             if (!isGlobal) internalDbAppend(&bufAbove, "}", 1);
         }
 
-        if (grpUnder.len > 0) {
-            if (!isGlobal) {
+        if (grpUnder.len > 0)
+        {
+            if (!isGlobal)
+            {
                 internalDbAppend(&bufUnder, grp->querySignature, strlen(grp->querySignature));
                 internalDbAppend(&bufUnder, "{", 1);
             }

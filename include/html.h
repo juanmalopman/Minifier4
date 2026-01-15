@@ -18,6 +18,7 @@ static constexpr char htmlTagCSS[] = "<!--CSS-->";
 static constexpr char htmlTagFold[] = "<!--FOLD-->";
 static constexpr char htmlTagJS[] = "<!--JS-->";
 static constexpr char htmlTagError[] = "<!--ERROR-->";
+static constexpr char footerTagText[] = "footer";
 
 //
 // FUNCTION PROTOTYPES

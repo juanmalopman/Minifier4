@@ -428,6 +428,12 @@ static void internalHandleOpenTag(_Inout_ ContextHTML* ctx, _Inout_ char* pD, _I
         ctx->iJS = ctx->o; 
         pD[ctx->o++] = '<'; return;
     }
+    else if (!_strnicmp(&pD[i + 1], footerTagText, sizeof(footerTagText) - 1))
+    {
+        // Set the footer as a non-critical class for it to be sent to the non-critical CSS unless it's before the <!--FOLD--> comment.
+        cssRecordSelector(&ctx->critSet, footerTagText, true, !ctx->isUnderFold);
+        pD[ctx->o++] = '<'; return;
+    } 
     else
     {
         pD[ctx->o++] = '<'; return;
