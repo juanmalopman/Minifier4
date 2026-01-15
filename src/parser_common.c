@@ -265,6 +265,7 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
     if (!_stricmp(inputExtension, ".html")) extension = fExtHTML;
     else if (!_stricmp(inputExtension, ".css")) extension = fExtCSS;
     else if (!_stricmp(inputExtension, ".js")) extension = fExtJS;
+    else appLogPrint("Input console path file extension not valid.", APP_LOG_TO_CONSOLE);
 
     // See if extension matches radio button selection HTML vs CSS vs JS vs auto
     if (pMiniCfg->inputType == radioButtonAutodetect || pMiniCfg->inputType == extension)
@@ -275,8 +276,11 @@ static bool internalSelectFileParser(_In_ StateGUI* pStateGUI)
         internalSpawnParsingThread(pStateGUI, extension, true, (char*)pMiniCfg->inPath, 0, true);
         return true;
     }
-    
-    appLogPrint("Input console path file extension not valid.", APP_LOG_TO_CONSOLE);
+    else
+    {    
+        appLogPrint("Input console path file extension not compatible with app configuration.", APP_LOG_TO_CONSOLE);
+    }
+
     return false;
 }
 

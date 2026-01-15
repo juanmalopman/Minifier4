@@ -164,7 +164,8 @@ static inline bool internalSpaceIsOptional(_In_ char c)
         case '=':
         case ',':
         case ':': 
-        case ';': 
+        case ';':
+        case '@': // Atomic at-rules are treated as selectors.
             return true;
         default: 
             return false;
@@ -177,6 +178,12 @@ static void internalRuleSetParse(_In_ const char* src, _In_ size_t len, _Out_ ch
     size_t o = 0;
     for (; i < len; i++)
     {
+        if (src[i] == '/' && i + 1 < len && src[i + 1] == '*') // Comment detected.
+        {
+            for (; i < len; ++i) if (src[i] == '/' && src[i - 1] == '*') break;
+            continue;
+        }
+
         if (!parserCommonIsSpace(src[i]))
         {
             dest[o++] = src[i];
@@ -185,9 +192,10 @@ static void internalRuleSetParse(_In_ const char* src, _In_ size_t len, _Out_ ch
 
         if (i + 1 < len)
         {
-            if (internalSpaceIsOptional(src[i + 1])) continue;
+            if (internalSpaceIsOptional(src[i + 1])) continue; // Skip adjacent spaces.
         }
-        else continue; // Skip trailing space.
+        else if (src[i] != '/') continue; // Skip trailing space.
+        else dest[o++] = src[i]; // A needed '/'.
 
         if (o)
         {
@@ -295,48 +303,62 @@ static void internalParseRecursiveGroup(
 {
     size_t i = *ioIdx;
 
-    // 1. Extract Local Signature
+    // 1. Extract Local Signature.
     size_t sigLen = preludeEnd - i;
     while (sigLen > 0 && parserCommonIsSpace((unsigned char)data[i + sigLen - 1])) sigLen--;
     
     char* localSig = malloc(sigLen + 1);
-    if (!localSig) return; // OOM check
-    memcpy(localSig, data + i, sigLen);
-    localSig[sigLen] = 0;
+    if (!localSig)
+    {
+        appLogError("Failed to alloc memory for at-rule signature.");
+        return;
+    }
 
-    // 2. Combine with Parent Signature
+    // Copy, optimize and null terminate.
+    internalRuleSetParse(data + i, sigLen, localSig); // TODO: Extract and match common at-rule specs to merge them even if they are spelled in a different way.
+
+    // 2. Combine with Parent Signature. // TODO: Implement a way to nest media queries instead of "duplicating" parent signatures in the output.
     char* combinedSig = nullptr;
-    if (parentSig && *parentSig) {
-        // Format: "ParentSig { LocalSig"
+    if (parentSig && *parentSig)
+    {
+        // Format: "ParentSig { LocalSig".
         size_t parentLen = strlen(parentSig);
         size_t combinedLen = parentLen + 3 + sigLen + 1; // " { " + null
         combinedSig = malloc(combinedLen);
-        if (combinedSig) {
+        if (combinedSig)
+        {
             sprintf_s(combinedSig, combinedLen, "%s { %s", parentSig, localSig);
         }
-    } else {
+        else
+        {
+            appLogError("Failed to alloc memory for nested at-rule signature.");
+            return;
+        }
+    }
+    else
+    {
         combinedSig = _strdup(localSig);
     }
     free(localSig);
 
-    // 3. Find Block Content
-    i = preludeEnd + 1; // Skip '{'
+    // 3. Find Block Content.
+    i = preludeEnd + 1; // Skip '{'.
     size_t contentStart = i;
     int depth = 1;
 
-    while (i < len && depth > 0) {
+    while (i < len && depth > 0)
+    {
         if (data[i] == '{') depth++;
         else if (data[i] == '}') depth--;
         i++;
     }
 
-    // 4. Recurse if valid block found
-    if (depth == 0 && combinedSig) {
-        internalParseRawCSS(ctx, combinedSig, data + contentStart, (i - 1) - contentStart);
-    }
+    // 4. Recurse if valid block found.
+    if (depth == 0 && combinedSig) internalParseRawCSS(ctx, combinedSig, data + contentStart, (i - 1) - contentStart);
 
     if (combinedSig) free(combinedSig);
-    *ioIdx = i; // Update main cursor
+
+    *ioIdx = i; // Update main cursor.
 }
 
 // Handles both (Selector + Descriptor Block) or (non-splittable at-rules ("@keyframes", "@font-face")).
