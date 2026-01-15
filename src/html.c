@@ -609,7 +609,7 @@ static bool internalThreadQueue(_Inout_ ContextHTML* ctx)
 
 static bool internalMergeContextsCSS(_In_ ContextHTML* ctx, _Out_ CssOutputs* outResult, _Out_ CssContext** outMaster)
 {
-    *outMaster = cssCreateContext();
+    *outMaster = cssCreateContext(ctx->mangle);
     if (!*outMaster)
     {
         appLogError("Failed to allocate memory for outMaster context.");

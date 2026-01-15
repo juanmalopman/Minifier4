@@ -25,14 +25,14 @@ typedef struct DynBuf
     size_t cap;
 } DynBuf;
 
-// A single CSS Rule Set: "div.container { background: green; color: red; }"
+// A single CSS Rule Set: "div.container { background: green; color: red; }".
 typedef struct CssRule
 {
     char* selector; // "div.container"
     char* declarationBlock;     // "background: green; color: red;"
 } CssRule;
 
-// A Group of Rule Sets (e.g., inside @media screen {...}).
+// A Group of Rule Sets (e.g., inside @media screen {...} or in global space).
 typedef struct CssAtRuleGroup
 {
     char* querySignature; // "@media screen and (min-width: 900px)" or "" for global.
@@ -48,6 +48,7 @@ typedef struct CssContext
     size_t groupCount;
     size_t groupCap;
     SetOfClassesAndIDs* pCritSet;
+    CssArena arena; // The unified memory store for all rules in this context.
     bool mangle;
 } CssContext;
 
@@ -55,15 +56,114 @@ typedef struct CssContext
 // CONFIGURATION CONSTANTS
 //
 
-static constexpr size_t ARENA_BLOCK_SIZE = 4096; // 4KB chunks to allocate at a time for found IDs and classes names.
+static constexpr size_t ARENA_BLOCK_SIZE = 8192; // 8KB chunks to allocate at a time for IDs, classes, declaration blocks...
+static constexpr size_t INVALID_INDEX = (size_t)-1;
 
 //
 // FUNCTIONS
 //
 
-CssContext* cssCreateContext()
+static void internalArenaInit(_Inout_ CssArena* arena)
+{
+    arena->head = nullptr;
+    arena->curr = nullptr;
+}
+
+static char* internalArenaAlloc(_Inout_ CssArena* arena, _In_ size_t size)
+{
+    // 1. Check if current block has space.
+    if (arena->curr != nullptr)
+    {
+        if (arena->curr->used + size <= arena->curr->cap)
+        {
+            char* ptr = arena->curr->data + arena->curr->used;
+            arena->curr->used += size;
+            return ptr;
+        }
+    }
+
+    // 2. Allocation needed. Ensure new block is large enough.
+    size_t allocSize = (size > ARENA_BLOCK_SIZE) ? size : ARENA_BLOCK_SIZE;
+    
+    CssArenaBlock* node = malloc(sizeof(CssArenaBlock));
+    if (node == nullptr)
+    {
+        appLogError("Failed to allocate memory in CSS arena allocation.");
+        return nullptr;
+    }
+
+    node->data = malloc(allocSize);
+    if (node->data == nullptr)
+    {
+        free(node);
+        appLogError("Failed to allocate memory in CSS arena allocation.");
+        return nullptr;
+    }
+
+    node->used = size;
+    node->cap = allocSize;
+    node->next = nullptr;
+
+    // 3. Link.
+    if (arena->curr != nullptr)
+    {
+        arena->curr->next = node;
+    }
+    else
+    {
+        arena->head = node;
+    }
+    arena->curr = node;
+
+    return node->data;
+}
+
+static void internalArenaFree(_Inout_ CssArena* arena)
+{
+    CssArenaBlock* node = arena->head;
+    while (node != nullptr)
+    {
+        CssArenaBlock* next = node->next;
+        if (node->data) free(node->data);
+        free(node);
+        node = next;
+    }
+    arena->head = nullptr;
+    arena->curr = nullptr;
+}
+
+// Transfers ownership of Src blocks to Dest. Src becomes empty.
+static void internalArenaMerge(_Inout_ CssArena* dest, _Inout_ CssArena* src)
+{
+    if (src->head == nullptr) return; // Nothing to merge.
+
+    if (dest->curr == nullptr)
+    {
+        // Dest is empty, just take src.
+        dest->head = src->head;
+        dest->curr = src->curr;
+    }
+    else
+    {
+        // Append src chain to end of dest chain.
+        dest->curr->next = src->head;
+        dest->curr = src->curr;
+    }
+
+    // Zero out src.
+    src->head = nullptr;
+    src->curr = nullptr;
+}
+
+CssContext* cssCreateContext(bool mangle)
 {
     CssContext* ctx = calloc(1, sizeof(CssContext));
+    if (ctx)
+    {
+        internalArenaInit(&ctx->arena);
+        ctx->mangle = mangle; // The mangle argument allows CssContext to stay as an opaque pointer to the html module.
+    }
+    else appLogError("Error allocating CSS context stucture.");
     return ctx;
 }
 
@@ -75,29 +175,24 @@ void cssDestroyContext(CssContext* ctx)
     if (ctx->groups != nullptr)
     {
         for (size_t i = 0; i < ctx->groupCount; i++)
-        {
-            // Free the query signature string.
-            if (ctx->groups[i].querySignature != nullptr) free(ctx->groups[i].querySignature);
-            
-            // Check if the rules array exists.
+        {            
+            // The rules array itself is the only thing separate from the arena
+            // (the array of structs, not the strings inside them).
             if (ctx->groups[i].rules != nullptr)
             {
-                for (size_t j = 0; j < ctx->groups[i].ruleCount; j++)
-                {
-                    // Free selector string.
-                    if (ctx->groups[i].rules[j].selector != nullptr) free(ctx->groups[i].rules[j].selector);
-                    
-                    // Free declaration block string.
-                    if (ctx->groups[i].rules[j].declarationBlock != nullptr) free(ctx->groups[i].rules[j].declarationBlock);
-                }
-
-                // Free the rules array itself.
                 free(ctx->groups[i].rules);
             }
         }
+
         // Free the groups array itself.
         free(ctx->groups);
     }
+
+    // Free the monolithic arena which holds:
+    // 1. All rule selectors (possibly mangled).
+    // 2. All rule declaration blocks.
+    // 3. All group query signatures (@media...).
+    internalArenaFree(&ctx->arena);
 
     // Free the context struct.
     free(ctx);
@@ -106,7 +201,7 @@ void cssDestroyContext(CssContext* ctx)
 // Finds an existing at-rule group or creates a new one
 static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const char* sig)
 {
-    // 1. Search existing
+    // 1. Search existing.
     for (size_t i = 0; i < ctx->groupCount; i++)
     {
         if (strcmp(ctx->groups[i].querySignature, sig) == 0)
@@ -115,7 +210,7 @@ static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const ch
         }
     }
 
-    // 2. Create new
+    // 2. Create new.
     if (ctx->groupCount == ctx->groupCap)
     {
         size_t newCap = (ctx->groupCap == 0) ? 4 : ctx->groupCap * 2;
@@ -127,10 +222,22 @@ static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const ch
     
     CssAtRuleGroup* grp = &ctx->groups[ctx->groupCount];
     
-    char* dupSig = strdup(sig);
-    if (!dupSig) return nullptr; // Fail if string duplication fails
+    // Store the signature in the Arena.
+    size_t sigLen = strlen(sig);
+    char* storedSig = internalArenaAlloc(&ctx->arena, sigLen + 1);
+    
+    if (storedSig)
+    {
+        memcpy(storedSig, sig, sigLen + 1);
+    }
+    else
+    {
+        appLogError("Arena allocation failed for at-rule signature.");
+        static char empty[] = ""; // TODO: Handle crash gracefully.
+        storedSig = empty;
+    }
 
-    grp->querySignature = dupSig;
+    grp->querySignature = storedSig;
     grp->rules = nullptr;
     grp->ruleCount = 0;
     grp->ruleCap = 0;
@@ -138,6 +245,12 @@ static CssAtRuleGroup* internalGetGroup(_Inout_ CssContext* ctx, _In_z_ const ch
     ctx->groupCount++; 
     return grp;
 }
+
+// Forward declarations for helpers.
+static inline bool internalSpaceIsOptional(_In_ char c);
+static void internalRuleSetParse(_In_ const char* src, _In_ size_t len, _Out_ char* dest);
+static inline bool internalIsIdentifierChar(char c);
+static bool internalFindInList(_In_ const SelectorList* list, _In_ const char* str, _In_ size_t len, _Out_ size_t* outIdx);
 
 // Helper: Growing the array without setting data.
 static CssRule* internalGetNextRuleSlot(_Inout_ CssAtRuleGroup* grp)
@@ -174,78 +287,161 @@ static inline bool internalSpaceIsOptional(_In_ char c)
     }
 }
 
+// Takes a normalized selector string (in src) and writes the mangled version to dest.
+// Dest must be large enough (max selector length).
+static void internalMangleBuffer(_In_ CssContext* ctx, _In_ const char* src, _Out_ char* dest)
+{
+    if (!ctx->mangle || !ctx->pCritSet)
+    {
+        strcpy(dest, src);
+        return;
+    }
+
+    size_t r = 0; 
+    size_t w = 0;
+    
+    while (src[r] != '\0')
+    {
+        // Detect Class (.) or ID (#)
+        if (src[r] == '.' || src[r] == '#')
+        {
+            char type = src[r];
+            size_t start = r + 1;
+            size_t end = start;
+
+            // Find end of identifier
+            while (internalIsIdentifierChar(src[end])) end++;
+
+            size_t idLen = end - start;
+            if (idLen > 0)
+            {
+                bool found = false;
+                size_t foundIdx = 0;
+                size_t mangleIdx = 0;
+
+                SelectorList* listAbove = (type == '.') ? &ctx->pCritSet->classesAbove : &ctx->pCritSet->idsAbove;
+                SelectorList* listUnder = (type == '.') ? &ctx->pCritSet->classesUnder : &ctx->pCritSet->idsUnder;
+
+                if (internalFindInList(listAbove, &src[start], idLen, &foundIdx))
+                {
+                    mangleIdx = foundIdx;
+                    found = true;
+                }
+                else if (internalFindInList(listUnder, &src[start], idLen, &foundIdx))
+                {
+                    mangleIdx = listAbove->count + foundIdx;
+                    found = true;
+                }
+
+                if (found)
+                {
+                    char mangledBuf[16] = {0}; // Base54 results are short
+                    parserCommonGetMangled((int)mangleIdx, mangledBuf);
+                    size_t mangledLen = strlen(mangledBuf);
+
+                    dest[w++] = type; // Keep prefix
+                    memcpy(&dest[w], mangledBuf, mangledLen);
+                    w += mangledLen;
+                    r = end;
+                    continue;
+                }
+            }
+        }
+        
+        // Copy char as is
+        dest[w++] = src[r++];
+    }
+    dest[w] = '\0';
+}
+
 static void internalRuleSetParse(_In_ const char* src, _In_ size_t len, _Out_ char* dest)
 {
     size_t i = 0;
     size_t o = 0;
     for (; i < len; i++)
     {
-        if (src[i] == '/' && i + 1 < len && src[i + 1] == '*') // Comment detected.
-        {
+        if (src[i] == '/' && i + 1 < len && src[i + 1] == '*') {
             for (; i < len; ++i) if (src[i] == '/' && src[i - 1] == '*') break;
             continue;
         }
-
-        if (!parserCommonIsSpace(src[i]))
-        {
+        if (!parserCommonIsSpace(src[i])) {
             dest[o++] = src[i];
             continue;
         }
-
-        if (i + 1 < len)
-        {
-            if (internalSpaceIsOptional(src[i + 1])) continue; // Skip adjacent spaces.
+        if (i + 1 < len) {
+            if (internalSpaceIsOptional(src[i + 1])) continue;
         }
-        else if (src[i] != '/') continue; // Skip trailing space.
-        else dest[o++] = src[i]; // A needed '/'.
+        else if (src[i] != '/') continue; 
+        else dest[o++] = src[i]; 
 
-        if (o)
-        {
+        if (o) {
             if (internalSpaceIsOptional(dest[o - 1])) continue;
         }
-        else continue; // Skip leading space
-
+        else continue; 
         dest[o++] = src[i];
     }
-
     dest[o] = '\0';
 }
 
 // Save CSS selector and declaration block.
-static void internalStoreRuleSet(_Inout_ CssAtRuleGroup* grp, _In_ const char* sel, _In_ size_t selLen, _In_ const char* declarationBlock, _In_ size_t declarationBlockLen)
+static void internalStoreRuleSet(_In_ CssContext* ctx, _Inout_ CssAtRuleGroup* grp, 
+                                 _In_ const char* sel, _In_ size_t selLen, 
+                                 _In_ const char* declarationBlock, _In_ size_t declarationBlockLen)
 {
     CssRule* r = internalGetNextRuleSlot(grp);
     if (r == nullptr) return;
+
+    // 1. Process Selector
+    // We use a stack buffer. CSS selectors are rarely huge, but if they exceed this,
+    // we could fallback to malloc, but for minification tools 8KB is plenty for a single selector group.
+    char tempSel[8192]; 
+    char mangledSel[8192];
     
-    // Mangling will change selector length, possibly swapping something like ".a" for ".aa".
-    // malloc() will probably allocate 16 bit chunks even if asking for less.
-    // Small allocations like for ".a" can turn into ".aaaa" only with more than 150.000 unique classes.
-    // Longer selectors will for sure become shorter after minification, or worst case, stay about the same length.
-    // TODO: Migrate mangling here to avoid allocating more than necessary, and have a different allocation strategy with pointers to pointers in chunk buffers.
-    //       If not just use realloc() conditionally when mangling.
-    r->selector = malloc(MAX(selLen * 1.5, 16));
-    if (r->selector != nullptr)
+    // Normalize whitespace (src -> tempSel)
+    size_t safeSelLen = (selLen < 8191) ? selLen : 8191;
+    internalRuleSetParse(sel, safeSelLen, tempSel);
+    
+    // Mangle (tempSel -> mangledSel)
+    // If mangling is off, this just copies tempSel to mangledSel.
+    internalMangleBuffer(ctx, tempSel, mangledSel);
+    
+    size_t finalSelLen = strlen(mangledSel);
+    
+    // Allocate exactly what we need from Arena
+    r->selector = internalArenaAlloc(&ctx->arena, finalSelLen + 1);
+    if (r->selector)
     {
-        internalRuleSetParse(sel, selLen, r->selector);
+        memcpy(r->selector, mangledSel, finalSelLen + 1);
     }
     else
     {
-        appLogError("Failed to allocate memory for a rule set selector.");
+        appLogError("Arena allocation failed for selector.");
         return;
     }
 
-    r->declarationBlock = malloc(declarationBlockLen + 1);
-    if (r->declarationBlock != nullptr)
+    // 2. Process Declaration Block
+    // Similar strategy: Normalize -> Store
+    // Declaration blocks can be large (data URIs etc), so we use a heap temp buffer if needed
+    // or just assume ruleSetParse reduces size. 
+    // Let's alloc a temp heap buffer to be safe, normalize, then store permanently in arena.
+    
+    char* tempDecl = malloc(declarationBlockLen + 1);
+    if (!tempDecl) return;
+
+    internalRuleSetParse(declarationBlock, declarationBlockLen, tempDecl);
+    size_t finalDeclLen = strlen(tempDecl);
+
+    r->declarationBlock = internalArenaAlloc(&ctx->arena, finalDeclLen + 1);
+    if (r->declarationBlock)
     {
-        internalRuleSetParse(declarationBlock, declarationBlockLen, r->declarationBlock);
+        memcpy(r->declarationBlock, tempDecl, finalDeclLen + 1);
     }
     else
     {
-        appLogError("Failed to allocate memory for a declaration block.");
-        free(r->selector);
-        r->selector = nullptr;
-        return;
+        appLogError("Arena allocation failed for decl block.");
     }
+    
+    free(tempDecl);
 }
 
 // To merge the results of parsing different CSS files.
@@ -253,33 +449,29 @@ void cssMergeContexts(CssContext* dest, CssContext* src)
 {
     if (dest == nullptr || src == nullptr) return;
 
+    // 1. Merge At-Rules groups.
     for (size_t i = 0; i < src->groupCount; i++)
     {
         CssAtRuleGroup* srcGrp = &src->groups[i];
-        
-        // Find corresponding bucket in destination (or create it).
         CssAtRuleGroup* destGrp = internalGetGroup(dest, srcGrp->querySignature);
         if (destGrp == nullptr) continue;
         
-        // Move rules from src to dest.
         for (size_t j = 0; j < srcGrp->ruleCount; j++)
         {
             CssRule* srcRule = &srcGrp->rules[j];
-            
-            // Get a blank slot in the destination.
             CssRule* destRule = internalGetNextRuleSlot(destGrp);
             if (destRule == nullptr) break;
 
-            // Transfer ownership.
+            // Simple pointer copy. 
+            // The actual data resides in src->arena (which we are about to move to dest).
             destRule->selector = srcRule->selector;
             destRule->declarationBlock = srcRule->declarationBlock;
-
-            // Nullify source. When cssDestroyContext(src) is called, 
-            // the memory pointed at by these pointers must not get free().
-            srcRule->selector = nullptr;
-            srcRule->declarationBlock = nullptr;
         }
     }
+
+    // 2. Merge Arenas.
+    // Transfer ownership of all memory blocks from src to dest.
+    internalArenaMerge(&dest->arena, &src->arena);
 }
 
 // Check if an at-rule implies selectors and descriptor blocks inside to be sorted above or under the fold.
@@ -468,7 +660,7 @@ static void internalParseAtomicBlock(
             CssAtRuleGroup* grp = internalGetGroup(ctx, currentSig ? currentSig : "");
             if (grp)
             {
-                internalStoreRuleSet(grp, 
+                internalStoreRuleSet(ctx, grp, 
                     data + selStart, selEnd - selStart, 
                     data + blockStart, (i - 1) - blockStart);
             }
@@ -483,7 +675,7 @@ static void internalParseAtomicBlock(
 
         // Store the entire statement (e.g., '@import "foo.css";') as the selector.
         // Pass "" and 0 as the declaration block.
-        if (grp) internalStoreRuleSet(grp, data + selStart, stmtEnd - selStart, "", 0);
+        if (grp) internalStoreRuleSet(ctx, grp, data + selStart, stmtEnd - selStart, "", 0);
         i++; // Advance past the semicolon
     }
     
@@ -550,140 +742,109 @@ static bool internalEnsurePointerArraySpace(_Inout_ SelectorList* list)
     return true;
 }
 
-static bool internalEnsureArenaSpace(_Inout_ SelectorList* list, _In_ size_t required)
-{
-    if (list->curr == nullptr || (list->curr->used + required > list->curr->cap))
-    {
-        // Allocate new node.
-        CssArenaNode* node = malloc(sizeof(CssArenaNode));
-        if (node == nullptr) return false;
-
-        // Allocate the raw buffer.
-        node->data = malloc(ARENA_BLOCK_SIZE);
-        if (node->data == nullptr) { free(node); return false; }
-
-        node->used = 0;
-        node->cap = ARENA_BLOCK_SIZE;
-        node->next = nullptr;
-
-        // Link it.
-        if (list->curr != nullptr)
-        {
-            list->curr->next = node;
-        }
-        else
-        {
-            list->head = node;
-        }
-        list->curr = node;
-    }
-
-    return true;
-}
-
-static constexpr size_t INVALID_INDEX = (size_t)-1;
-// Helper to append selector string to a specific list.
 static size_t internalListAppend(_Inout_ SelectorList* list, _In_ const char* str)
 {
     size_t strLen = strlen(str);
-    size_t required = strLen + 1; // +1 for null terminator
+    size_t required = strLen + 1;
 
-    // 1. Ensure we have an arena block with space.
-    if (!internalEnsureArenaSpace(list, required)) return INVALID_INDEX;
-
-    // 2. Ensure Pointer Array has space.
+    // 1. Ensure Pointer Array space
     if (!internalEnsurePointerArraySpace(list)) return INVALID_INDEX;
 
-    // 3. Copy String into Arena
-    char* dest = list->curr->data + list->curr->used;
+    // 2. Alloc from Arena
+    char* dest = internalArenaAlloc(&list->arena, required);
+    if (!dest) return INVALID_INDEX;
+
     memcpy(dest, str, strLen);
     dest[strLen] = 0;
-    list->curr->used += required;
 
-    // 4. Store Pointer
+    // 3. Store Pointer
     list->items[list->count++] = dest;
-
     return list->count - 1;
 }
 
-// Helper to check if a specific class or id name exists in a list.
-static size_t internalListContains(_In_ SelectorList* list, _In_ const char* name, _In_ size_t len)
+// Checks if a class or id is in the forwarded list.
+// If the name to be checked is mangled and the list to be checked against is "under",
+// offset must then be the "above" list count. Otherwise must be 0.
+static size_t internalListContains(_In_ SelectorList* list, _In_ const char* name, _In_ size_t len, _In_ size_t offset, _In_ bool mangled)
 {
-    size_t index;
-
     if (!list || !list->items) return INVALID_INDEX;
-    for (size_t i = 0; i < list->count; i++)
+    if (mangled)
     {
-        // TODO: Use check length first to avoid full strcmp if not needed?
-        const char* item = list->items[i];
-        if (strncmp(item, name, len) == 0 && item[len] == '\0')
+        char item[10];
+        for (size_t i = 0; i < list->count; i++)
         {
-            index = i;
-            return index;
+            parserCommonGetMangled(offset + i, item);
+            if (strncmp(item, name, len) == 0 && item[len] == '\0') return i;
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < list->count; i++)
+        {
+            const char* item = list->items[i];
+            if (strncmp(item, name, len) == 0 && item[len] == '\0') return i;
         }
     }
     return INVALID_INDEX;
 }
 
+// Helper for finding exact match in list.
+static bool internalFindInList(_In_ const SelectorList* list, _In_ const char* str, _In_ size_t len, _Out_ size_t* outIdx)
+{
+    for (size_t i = 0; i < list->count; i++)
+    {
+        const char* item = list->items[i];
+        if (item && strlen(item) == len && memcmp(item, str, len) == 0)
+        {
+            *outIdx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
 size_t cssRecordSelector(SetOfClassesAndIDs* set, const char* name, bool isId, bool isAbove)
 {
-    // Calculate length once for all checks.
     size_t nameLen = strlen(name);
-
-    size_t index = INVALID_INDEX; 
+    size_t index = INVALID_INDEX;
 
     if (isAbove)
     {
-        // We only check the specific "Above" list.
         SelectorList* target = isId ? &set->idsAbove : &set->classesAbove;
-
-        index = internalListContains(target, name, nameLen);
-
-        // Only add if it doesn't already exist.
+        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
+        index = internalListContains(target, name, nameLen, 0, false);
         if (index == INVALID_INDEX) index = internalListAppend(target, name);
-
         return index;
     }
     else
     {
         SelectorList* aboveList = isId ? &set->idsAbove : &set->classesAbove;
-        index = internalListContains(aboveList, name, nameLen);
+        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
+        index = internalListContains(aboveList, name, nameLen, 0, false);
         if (index != INVALID_INDEX) return index;
 
         SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
-        index = internalListContains(underList, name, nameLen);
+        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
+        index = internalListContains(underList, name, nameLen, 0, false);
         if (index == INVALID_INDEX) index = internalListAppend(underList, name);
-
         return index + aboveList->count;
     }
 }
 
 static void internalListFree(_Inout_ SelectorList* list)
 {
-    // Free the pointer array.
     if (list->items)
     {
         free(list->items);
         list->items = nullptr;
     }
-
-    // Free the memory blocks
-    CssArenaNode* node = list->head;
-    while (node != nullptr)
-    {
-        CssArenaNode* next = node->next;
-        if (node->data) free(node->data);
-        free(node);
-        node = next;
-    }
+    // Free the arena.
+    internalArenaFree(&list->arena);
     
-    list->head = nullptr;
-    list->curr = nullptr;
     list->count = 0;
     list->cap = 0;
 }
 
-// Called from html.c cleanup.
 void cssFreeCriticalSet(SetOfClassesAndIDs* set)
 {
     internalListFree(&set->classesAbove);
@@ -692,7 +853,7 @@ void cssFreeCriticalSet(SetOfClassesAndIDs* set)
     internalListFree(&set->idsUnder);
 }
 
-static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndIDs* set)
+static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndIDs* set, _In_ bool mangled)
 {
     if (!set) return true; // Default to critical if no data.
 
@@ -708,31 +869,30 @@ static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndID
         bool segmentIsCritical = true; // Assume it's critical until proved otherwise.
         const char* segmentStart = cursor;
 
-        // Scan the current segment
+        // Scan the current segment.
         while (*cursor && *cursor != ',')
         {
-            // Look for Class (.) or ID (#) start
+            // Look for Class (.) or ID (#) start.
             if (*cursor == '.' || *cursor == '#')
             {
                 bool isId = (*cursor == '#');
                 
-                // Check if this is inside a :not(...) pseudo-class
-                // We look backwards from current position.
-                // 1. We need at least 5 chars back: ":not("
+                // Check if this is inside a :not(...) pseudo-class looking backwards from current position.
+                // 1. We need at least 5 chars back: ":not(".
                 bool isInsideNot = false;
                 if (cursor - segmentStart >= 5)
                 {
-                    // Simple check: looking for ":not(" immediately preceding
-                    // Note: This is a basic check. It won't catch ":not( div " (spaces).
+                    // Simple check: looking for ":not(" immediately preceding.
+                    // TODO: Catch ":not( div " (with whitespaces).
                     if (strncmp(cursor - 5, ":not(", 5) == 0)
                     {
                         isInsideNot = true;
                     }
                 }
 
-                cursor++; // Move past . or #
+                cursor++; // Move past '.' or '#'
                 
-                // Extract the name
+                // Extract the name.
                 const char* nameStart = cursor;
                 size_t nameLen = 0;
                 while (*cursor && (isalnum((unsigned char)*cursor) || *cursor == '-' || *cursor == '_'))
@@ -745,7 +905,9 @@ static bool internalIsCritical(_In_ const char* selector, _In_ SetOfClassesAndID
                 {
                     // Is it in the "Under" list?
                     SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
-                    if (internalListContains(underList, nameStart, nameLen))
+                    size_t countAbove = isId ? set->idsAbove.count : set->classesAbove.count;
+                    // Checking an "under" list with internalListContains mandates the 4th argument "offset" to be countAbove.
+                    if (internalListContains(underList, nameStart, nameLen, countAbove, mangled) != INVALID_INDEX)
                     {
                         segmentIsCritical = false;
                         
@@ -869,7 +1031,7 @@ CssOutputs cssGenerateSplitOutput(CssContext* ctx, SetOfClassesAndIDs* set)
         {
             CssRule* r = &grp->rules[j];
             
-            DynBuf* target = internalIsCritical(r->selector, set) ? &grpAbove : &grpUnder;
+            DynBuf* target = internalIsCritical(r->selector, set, ctx->mangle) ? &grpAbove : &grpUnder;
             
             internalDbAppend(target, r->selector, strlen(r->selector));
             
@@ -928,131 +1090,6 @@ static inline bool internalIsIdentifierChar(char c)
     return isalnum((unsigned char)c) || c == '-' || c == '_';
 }
 
-// Helper to search for a string slice in a SelectorList.
-// Returns true if found and sets *outIdx.
-static bool internalFindInList(
-    _In_ const SelectorList* list, 
-    _In_ const char* str, 
-    _In_ size_t len, 
-    _Out_ size_t* outIdx)
-{
-    for (size_t i = 0; i < list->count; i++)
-    {
-        const char* item = list->items[i];
-        
-        // Check length first, then content.
-        if (item && strlen(item) == len && memcmp(item, str, len) == 0)
-        {
-            *outIdx = i;
-            return true;
-        }
-    }
-    return false;
-}
-
-
-static void internalMangleSelectorString(_In_ CssContext* ctx, _Inout_ char* selector)
-{
-    if (selector == nullptr) return;
-
-    size_t r = 0; // Read head.
-    size_t w = 0; // Write head.
-    size_t len = strlen(selector);
-
-    while (r < len)
-    {
-        // Detect start of Class (.) or ID (#).
-        if (selector[r] == '.' || selector[r] == '#')
-        {
-            char type = selector[r];
-            size_t start = r + 1;
-            size_t end = start;
-
-            // Determine length of the identifier.
-            while (end < len && internalIsIdentifierChar(selector[end])) end++;
-
-            size_t idLen = end - start;
-            if (!(idLen > 0)) return;
-
-            bool found = false;
-            size_t foundIdx = 0;
-            size_t mangleIdx = 0;
-
-            // Determine which lists to search based on type.
-            SelectorList* listAbove = (type == '.') ? &ctx->pCritSet->classesAbove : &ctx->pCritSet->idsAbove;
-            SelectorList* listUnder = (type == '.') ? &ctx->pCritSet->classesUnder : &ctx->pCritSet->idsUnder;
-
-            // 1. Search "Above" list.
-            if (internalFindInList(listAbove, &selector[start], idLen, &foundIdx))
-            {
-                mangleIdx = foundIdx;
-                found = true;
-            }
-            // 2. Search "Under" list.
-            else if (internalFindInList(listUnder, &selector[start], idLen, &foundIdx))
-            {
-                // Logic Requirement 2: Index is 'Above' count + 'Under' index
-                mangleIdx = listAbove->count + foundIdx;
-                found = true;
-            }
-
-            if (found)
-            {
-                // 1. Get the mangled replacement.
-                char mangledBuf[64] = { }; // TODO: More than enough for a class or ID, but make the swap in place.
-                parserCommonGetMangled((int)mangleIdx, mangledBuf);
-                size_t mangledLen = strlen(mangledBuf);
-
-                // 2. Leave the prefix (. or #).
-                w++;
-
-                // 3. Write the mangled name. // TODO: Check the name is shorter or allocate extra memory for selectors from the get-go.
-                                              // Allocating something like 1.5x the number of chars for a selector would make it almost imposible to overflow. 
-                memcpy(&selector[w], mangledBuf, mangledLen);
-                w += mangledLen;
-
-                // 4. Advance Read Head past the original identifier.
-                r = end;
-                continue; 
-            }
-        }
-
-        // If not a class/id, or not found in list, copy character as-is
-        selector[w++] = selector[r++];
-    }
-
-    // Null-terminate the string at its new (potentially shorter) length
-    selector[w] = '\0';
-}
-
-// Loop through all rule set selectors and mangle them.
-static void internalMangleNames(_In_ CssContext* ctx)
-{
-    // Safety checks.
-    if (ctx == nullptr || !ctx->mangle || ctx->pCritSet == nullptr) return;
-
-    // Iterate over all At-Rule groups.
-    for (size_t g = 0; g < ctx->groupCount; g++)
-    {
-        CssAtRuleGroup* group = &ctx->groups[g];
-
-        if (group->rules != nullptr)
-        {
-            // Iterate over all rule sets in this group.
-            for (size_t r = 0; r < group->ruleCount; r++)
-            {
-                CssRule* rule = &group->rules[r];
-
-                // Mangle the selector.
-                if (rule->selector != nullptr)
-                {
-                    internalMangleSelectorString(ctx, rule->selector);
-                }
-            }
-        }
-    }
-}
-
 DWORD WINAPI cssSpawnThread(LPVOID lpParam)
 {
     ParsingThreadArgs* args = (ParsingThreadArgs*)lpParam;
@@ -1065,7 +1102,7 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
     }
 
     // Instead of generating a string immediately, we build the Context
-    CssContext* ctx = cssCreateContext();
+    CssContext* ctx = cssCreateContext(args->mangle);
     if (!ctx)
     {
         free(pD);
@@ -1075,11 +1112,8 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
     }
 
     ctx->pCritSet = args->pCritSet;
-    ctx->mangle = args->mangle;
 
     internalParseRawCSS(ctx, "", pD, args->len);
-
-    internalMangleNames(ctx); // TODO: If main thread and mangle is enabled, maybe mangle nonetheless?
 
     free(pD);
 
@@ -1088,7 +1122,7 @@ DWORD WINAPI cssSpawnThread(LPVOID lpParam)
     {
         CssOutputs out = cssGenerateSplitOutput(ctx, NULL); 
         // For standalone, logic dictates we just dump everything.
-        // We combine above and under (if any generated)
+        // We combine above and under (if any generated).
         
         size_t total = out.aboveLen + out.underLen;
         char* finalBuf = malloc(total + 1);

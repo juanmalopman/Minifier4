@@ -12,23 +12,31 @@
 // STRUCTS
 //
 
-// Structures to track classes and IDs found above and under the fold in HTML.
-typedef struct CssArenaNode
+// Arena allocations are used to store at-rules, selector lists and declaration blocks.
+typedef struct CssArenaBlock
 {
-    char* data; // A single block of memory for strings of all classes and IDs.
+    char* data;
     size_t used;
     size_t cap;
-    struct CssArenaNode* next;
-} CssArenaNode;
+    struct CssArenaBlock* next;
+} CssArenaBlock;
+
+// The manager struct for the arena
+typedef struct CssArena
+{
+    CssArenaBlock* head;
+    CssArenaBlock* curr; // The block we are currently writing to.
+} CssArena;
+
 typedef struct SelectorList
 {
-    char** items;        // Array of pointers for fast iteration.
+    char** items;        // Array of pointers to arena indexes.
     size_t count;        // Number of pointers.
     size_t cap;          // Capacity of pointer array.
     
-    CssArenaNode* head;  // Start of memory blocks.
-    CssArenaNode* curr;  // Current block we are writing to.
+    CssArena arena;      // Shared arena logic. First parsing CSS and then merging contexts.
 } SelectorList;
+
 typedef struct SetOfClassesAndIDs
 {
     SelectorList classesAbove;
@@ -54,7 +62,7 @@ typedef struct CssContext CssContext;
 //
 
 DWORD WINAPI cssSpawnThread(_Inout_ LPVOID lpParam);
-CssContext* cssCreateContext();
+CssContext* cssCreateContext(_In_ bool mangle);
 void cssDestroyContext(_In_ CssContext* ctx);
 void cssMergeContexts(_Inout_ CssContext* dest, _Inout_ CssContext* src);
 size_t cssRecordSelector(_Inout_ SetOfClassesAndIDs* set, _In_z_ const char* name, _In_ bool isId, _In_ bool isAbove);
