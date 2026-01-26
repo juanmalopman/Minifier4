@@ -55,7 +55,7 @@ typedef struct ContextHTML
     size_t o;        // Output write cursor index.
     
     // CSS Logic.
-    SetOfClassesAndIDs critSet; // Stores classes found "Above the Fold".
+    SetOfClassesAndIDs critSet; // Stores found classes and id separated by above or under the fold location.
     bool isUnderFold;           // State flag during parsing.
 
     bool mangle; // Current config.
@@ -547,65 +547,107 @@ static bool internalThreadQueue(_Inout_ ContextHTML* ctx)
 {
     if (ctx->iChildThread)
     {
-        // Prepare for any mangling CSS threads might need. // TODO: Call after JS threads and before CSS threads.
-        internalMangledNamesSetup(ctx);
-
         // TODO: Make these settings available to the user.
         static constexpr DWORD dwTotalTimeout = 3000; // 3 seconds total for all batches.
         static constexpr int BATCH_SIZE = 32; // Max number of threads to spawn at a time. Must be <= 64 (MAXIMUM_WAIT_OBJECTS).
+        
         DWORD dwStartTime = GetTickCount();
-
         HANDLE batchHandles[BATCH_SIZE];
-
-        for (int i = 0; i < ctx->iChildThread; i += BATCH_SIZE)
+        int batchIndices[BATCH_SIZE]; // Map batch index back to pChildThreads index
+        
+        // Execute in two passes: 0 = JS, 1 = CSS.
+        for (int pass = 0; pass < 2; pass++)
         {
-            // Calculate batch bounds.
-            int remaining = ctx->iChildThread - i;
-            int currentBatchCount = (remaining > BATCH_SIZE) ? BATCH_SIZE : remaining;
+            bool doingCSS = (pass == 1);
 
-            // A. Spawn and Collect Handles.
-            for (int j = 0; j < currentBatchCount; j++)
+            // Execute mangled names setup after JS threads finish, but before CSS threads start.
+            // This allows JS to potentially extract class names that CSS needs to be aware of.
+            if (doingCSS)
             {
-                int taskIndex = i + j;
-                if (internalSpawnHelperThread(taskIndex, ctx->pChildThreads))
+                internalMangledNamesSetup(ctx);
+            }
+
+            int currentBatchCount = 0;
+
+            for (int i = 0; i < ctx->iChildThread; i++)
+            {
+                // Filter: If pass 0, process only JS (!isCSS). If pass 1, process only CSS.
+                if (ctx->pChildThreads[i].isCSS != doingCSS) continue;
+
+                // 1. Spawn.
+                if (internalSpawnHelperThread(i, ctx->pChildThreads))
                 {
-                    batchHandles[j] = ctx->pChildThreads[taskIndex].hThread;
+                    batchHandles[currentBatchCount] = ctx->pChildThreads[i].hThread;
                 }
                 else
                 {
-                    // Handle spawn failure (fallback to invalid handle to prevent wait crash).
-                    batchHandles[j] = INVALID_HANDLE_VALUE; 
+                    batchHandles[currentBatchCount] = INVALID_HANDLE_VALUE;
                 }
-            }
+                
+                // Track which main index this handle belongs to for cleanup.
+                batchIndices[currentBatchCount] = i;
+                currentBatchCount++;
 
-            // B. Calculate Time Remaining.
-            DWORD dwElapsed = GetTickCount() - dwStartTime;
-            DWORD dwTimeLeft = (dwElapsed >= dwTotalTimeout) ? 0 : (dwTotalTimeout - dwElapsed);
-
-            // C. Wait for this specific batch.
-            // Note: WaitForMultipleObjects fails if count is 0, but logic guarantees > 0 here.
-            DWORD dwWaitResult = WaitForMultipleObjects(
-                (DWORD)currentBatchCount, 
-                batchHandles, 
-                TRUE,
-                dwTimeLeft
-            );
-
-            // D. Cleanup Handles immediately to free system resources.
-            for (int j = 0; j < currentBatchCount; j++)
-            {
-                if (batchHandles[j] && batchHandles[j] != INVALID_HANDLE_VALUE)
+                // 2. If Batch Full, Wait and Clean.
+                if (currentBatchCount == BATCH_SIZE)
                 {
-                    CloseHandle(batchHandles[j]);
-                    ctx->pChildThreads[i + j].hThread = nullptr;
+                    DWORD dwElapsed = GetTickCount() - dwStartTime;
+                    DWORD dwTimeLeft = (dwElapsed >= dwTotalTimeout) ? 0 : (dwTotalTimeout - dwElapsed);
+
+                    DWORD dwWaitResult = WaitForMultipleObjects(
+                        (DWORD)currentBatchCount, 
+                        batchHandles, 
+                        TRUE,
+                        dwTimeLeft
+                    );
+
+                    // Cleanup Handles.
+                    for (int j = 0; j < currentBatchCount; j++)
+                    {
+                        if (batchHandles[j] && batchHandles[j] != INVALID_HANDLE_VALUE)
+                        {
+                            CloseHandle(batchHandles[j]);
+                            ctx->pChildThreads[batchIndices[j]].hThread = nullptr;
+                        }
+                    }
+
+                    if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+                    {
+                        appLogError("Helper threads timed out or failed in batch processing.");
+                        return false;
+                    }
+
+                    currentBatchCount = 0;
                 }
             }
 
-            // E. Check Result.
-            if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+            // 3. Process remaining items in this pass.
+            if (currentBatchCount > 0)
             {
-                appLogError("Helper threads timed out or failed in batch processing.");
-                return false;
+                DWORD dwElapsed = GetTickCount() - dwStartTime;
+                DWORD dwTimeLeft = (dwElapsed >= dwTotalTimeout) ? 0 : (dwTotalTimeout - dwElapsed);
+
+                DWORD dwWaitResult = WaitForMultipleObjects(
+                    (DWORD)currentBatchCount, 
+                    batchHandles, 
+                    TRUE,
+                    dwTimeLeft
+                );
+
+                for (int j = 0; j < currentBatchCount; j++)
+                {
+                    if (batchHandles[j] && batchHandles[j] != INVALID_HANDLE_VALUE)
+                    {
+                        CloseHandle(batchHandles[j]);
+                        ctx->pChildThreads[batchIndices[j]].hThread = nullptr;
+                    }
+                }
+
+                if (dwWaitResult == WAIT_TIMEOUT || dwWaitResult == WAIT_FAILED)
+                {
+                    appLogError("Helper threads timed out or failed in batch processing.");
+                    return false;
+                }
             }
         }
     }
