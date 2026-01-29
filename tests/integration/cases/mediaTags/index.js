@@ -34,14 +34,14 @@ function closeMenu()
 {
 	// If the viewport is wide, disable the menu functionality.
 	if (getStyle(navBarFirstChild,"padding-top") != "90px") { return; }
-	if (navBarFirstChild.classList.contains(/*.classNext*/"closedNavBarMenu"))
+	if (navBarFirstChild.classList.contains(/*class-Next*/"closedNavBarMenu"))
 	{
-		navBarFirstChild.classList.remove(/*.classNext*/"closedNavBarMenu");
+		navBarFirstChild.classList.remove(/*class-Next*/"closedNavBarMenu");
 		navBarFirstChild.style.maxHeight = "270px";
 	}
 	else
 	{
-		navBarFirstChild.classList.add(/*.classNext*/"closedNavBarMenu");
+		navBarFirstChild.classList.add(/*class-Next*/"closedNavBarMenu");
 		navBarFirstChild.style.maxHeight = "90px";
 	}
 };
@@ -53,10 +53,10 @@ navBar.firstChild.firstChild.onpointerdown = function (e)
 };
 
 
-document.getElementById("navbarToInvestments").onpointerdown=function(e){e.stopPropagation();slideToId(/*.idNext*/"investmentsSectionStart");};
-document.getElementById("footerToInvestments").onpointerdown=function(){slideToId(/*.idNext*/"investmentsSectionStart");};
-document.getElementById("navbarToLegal").onpointerdown=function(e){e.stopPropagation();slideToId(/*.idNext*/"legalExplained");};
-document.getElementById("footerToLegal").onpointerdown=function(){slideToId(/*.idNext*/"legalExplained");};
+document.getElementById("navbarToInvestments").onpointerdown=function(e){e.stopPropagation();slideToId(/*id-Next*/"investmentsSectionStart");};
+document.getElementById("footerToInvestments").onpointerdown=function(){slideToId(/*id-Next*/"investmentsSectionStart");};
+document.getElementById("navbarToLegal").onpointerdown=function(e){e.stopPropagation();slideToId(/*id-Next*/"legalExplained");};
+document.getElementById("footerToLegal").onpointerdown=function(){slideToId(/*id-Next*/"legalExplained");};
 
 function slideToId(idToSlideTo)
 {

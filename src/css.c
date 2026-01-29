@@ -806,30 +806,41 @@ static bool internalFindInList(_In_ const SelectorList* list, _In_ const char* s
 
 size_t cssRecordSelector(SetOfClassesAndIDs* set, const char* name, bool isId, bool isAbove)
 {
+    if (!set) return INVALID_INDEX;
+
     size_t nameLen = strlen(name);
     size_t index = INVALID_INDEX;
+
+    // Acquire Exclusive Lock. Needed for any spawned JS helper threads finding new selectors concurrently.
+    AcquireSRWLockExclusive(&set->lock);
 
     if (isAbove)
     {
         SelectorList* target = isId ? &set->idsAbove : &set->classesAbove;
-        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
+        // Check without mangling logic inside the internal check
         index = internalListContains(target, name, nameLen, 0, false);
         if (index == INVALID_INDEX) index = internalListAppend(target, name);
-        return index;
     }
     else
     {
         SelectorList* aboveList = isId ? &set->idsAbove : &set->classesAbove;
-        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
         index = internalListContains(aboveList, name, nameLen, 0, false);
-        if (index != INVALID_INDEX) return index;
-
-        SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
-        // internalListContains is being called with an unmangled name, so 4th argument is irrelevant and last must be false.
-        index = internalListContains(underList, name, nameLen, 0, false);
-        if (index == INVALID_INDEX) index = internalListAppend(underList, name);
-        return index + aboveList->count;
+        
+        if (index == INVALID_INDEX)
+        {
+            SelectorList* underList = isId ? &set->idsUnder : &set->classesUnder;
+            size_t foundUnder = internalListContains(underList, name, nameLen, 0, false);
+            
+            if (foundUnder == INVALID_INDEX) 
+            {
+                foundUnder = internalListAppend(underList, name);
+            }
+            index = foundUnder + aboveList->count;
+        }
     }
+
+    ReleaseSRWLockExclusive(&set->lock);
+    return index;
 }
 
 static void internalListFree(_Inout_ SelectorList* list)
@@ -844,6 +855,15 @@ static void internalListFree(_Inout_ SelectorList* list)
     
     list->count = 0;
     list->cap = 0;
+}
+
+void cssInitCriticalSet(SetOfClassesAndIDs* set)
+{
+    if (set)
+    {
+        memset(set, 0, sizeof(SetOfClassesAndIDs));
+        InitializeSRWLock(&set->lock);
+    }
 }
 
 void cssFreeCriticalSet(SetOfClassesAndIDs* set)

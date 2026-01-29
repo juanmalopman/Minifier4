@@ -43,6 +43,8 @@ typedef struct SetOfClassesAndIDs
     SelectorList idsAbove;
     SelectorList classesUnder;
     SelectorList idsUnder;
+
+    SRWLOCK lock;
 } SetOfClassesAndIDs;
 
 // Structure to hold generated strings for final stitching.
@@ -66,6 +68,7 @@ CssContext* cssCreateContext(_In_ bool mangle);
 void cssDestroyContext(_In_ CssContext* ctx);
 void cssMergeContexts(_Inout_ CssContext* dest, _Inout_ CssContext* src);
 size_t cssRecordSelector(_Inout_ SetOfClassesAndIDs* set, _In_z_ const char* name, _In_ bool isId, _In_ bool isAbove);
+void cssInitCriticalSet(_Inout_ SetOfClassesAndIDs* set);
 void cssFreeCriticalSet(_Inout_ SetOfClassesAndIDs* set);
 void cssOutFree(_Inout_ CssOutputs* out);
 CssOutputs cssGenerateSplitOutput(_In_ CssContext* ctx, _In_ SetOfClassesAndIDs* criticalSet);

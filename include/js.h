@@ -11,6 +11,13 @@
 #include "main_window.h"
 
 //
+// CONFIGURATION CONSTANTS
+//
+
+static constexpr char idNextComment[] = "/*ID-NEXT*/";
+static constexpr char classNextComment[] = "/*CLASS-NEXT*/";
+
+//
 // FUNCTION PROTOTYPES
 //
 

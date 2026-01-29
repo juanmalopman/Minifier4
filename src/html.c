@@ -803,6 +803,7 @@ DWORD WINAPI htmlSpawnThread(LPVOID lpParam)
 
     ContextHTML contextHTML = { };
     ContextHTML* ctx = &contextHTML;
+    cssInitCriticalSet(&ctx->critSet);
     ctx->mangle = argsStack.mangle;
     ctx->pChildThreads = malloc(nThreadBlock * sizeof(ChildThreads));
 
