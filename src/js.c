@@ -7,7 +7,6 @@
 #include <stdint.h> // int64_t, uint32_t, etc.
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h> // sprintf_s, strlen, etc. TODO: Needed here?
 #include <ctype.h>
 #include "parser_common.h"
 #include "main_window.h"
@@ -26,11 +25,20 @@ typedef struct JsDynBuf
     size_t cap;
 } JsDynBuf;
 
+// Internal context types for mangling decision.
+typedef enum JsContextType
+{
+    CTX_NONE = 0,
+    CTX_ID,         // Force mangle as ID.
+    CTX_CLASS,      // Force mangle as Class.
+    CTX_SELECTOR    // Detect based on '#' or '.' prefix.
+} JsContextType;
+
 //
 // FUNCTIONS
 //
 
-static void jsDbInit(JsDynBuf* db)
+static void internalDbInit(JsDynBuf* db)
 {
     db->cap = 4096;
     db->len = 0;
@@ -38,14 +46,31 @@ static void jsDbInit(JsDynBuf* db)
     if (db->data) db->data[0] = 0;
 }
 
-static void jsDbAppend(JsDynBuf* db, const char* str, size_t n)
+static void internalDbAppend(JsDynBuf* db, const char* str, size_t n)
 {
     if (!db->data) return;
     if (db->len + n + 1 >= db->cap)
     {
-        while (db->len + n + 1 >= db->cap) db->cap *= 2;
-        char* tmp = realloc(db->data, db->cap);
+        size_t newCap = db->cap;
+        while (db->len + n + 1 >= newCap)
+        {
+            if (newCap > SIZE_MAX / 2) // Overflow protection
+            {
+                if (db->len + n + 1 >= SIZE_MAX)
+                {
+                    appLogError("Can't allocate more memory for JS output.");
+                    return;
+                }
+                newCap = SIZE_MAX;
+            }
+            else
+            {
+                newCap *= 2;
+            }
+        }
+        char* tmp = realloc(db->data, newCap);
         if (!tmp) return;
+        db->cap = newCap;
         db->data = tmp;
     }
     memcpy(db->data + db->len, str, n);
@@ -53,79 +78,230 @@ static void jsDbAppend(JsDynBuf* db, const char* str, size_t n)
     db->data[db->len] = 0;
 }
 
-static void jsDbAppendChar(JsDynBuf* db, char c)
+static void internalDbAppendChar(JsDynBuf* db, char c)
 {
     char tmp[2] = { c, 0 };
-    jsDbAppend(db, tmp, 1);
+    internalDbAppend(db, tmp, 1);
 }
 
-static inline bool jsIsIdentifierChar(char c)
+static inline bool internalIsIdentifierChar(char c)
 {
     return isalnum((unsigned char)c) || c == '-' || c == '_';
 }
 
-// Helper to look backwards in source for /*ID-NEXT*/ or /*CLASS-NEXT*/.
-// Returns 1 for ID, 0 for Class, -1 for None.
-static int jsSniffDirective(const char* src, size_t i)
+// Skips whitespace backwards. Returns new index.
+static size_t internalSkipSpaceBack(const char* src, size_t i)
 {
-    if (i == 0) return -1;
+    while (i > 0 && parserCommonIsSpace(src[i])) i--;
+    return i;
+}
+
+// Checks if the word ending at index 'i' matches 'target'.
+// E.g. "...classList" at i (pointing to 't') matches "classList".
+// Also ensures the character BEFORE the match is not alphanumeric (boundary check).
+// Updates 'i' to point before the word on success.
+static bool internalMatchWordBack(const char* src, size_t* i, const char* target)
+{
+    size_t tLen = strlen(target);
+    if (*i < tLen - 1) return false;
+
+    size_t startIdx = *i - (tLen - 1);
+    
+    // Check string match.
+    if (strncmp(&src[startIdx], target, tLen) != 0) return false;
+
+    // Check boundary (ensure we didn't match suffix of another word like 'notclassList').
+    if (startIdx > 0 && internalIsIdentifierChar(src[startIdx - 1])) return false;
+
+    *i = (startIdx > 0) ? startIdx - 1 : 0;
+    return true;
+}
+
+static JsContextType internalSniffDirective(const char* src, size_t i)
+{
+    if (i == 0) return CTX_NONE;
     size_t end = i - 1;
 
-    // 1. Skip whitespace backwards from the current quote position.
-    while (end > 0 && parserCommonIsSpace(src[end])) end--;
+    // Skip whitespace backwards.
+    // This allows the directive to be placed on a previous line or separated by spaces.
+    end = internalSkipSpaceBack(src, end);
 
-    // 2. We expect the comment to end with '*/'.
-    if (end < 1 || src[end] != '/' || src[end - 1] != '*') return -1;
+    // Check for ID Directive.
+    // sizeof includes the null terminator for string literals, so subtract 1.
+    const size_t kIdLen = sizeof(idNextComment) - 1;
 
-    // 3. Check for /*ID-NEXT*/ (Total length 11: 2 for /*, 7 for ID-NEXT, 2 for */).
-    // We are at the index of the final '/'. Start of content is at end - 8.
-    if (end >= 10 && src[end - 10] == '/' && src[end - 9] == '*')
+    if (end >= kIdLen - 1)
     {
-        const char* content = &src[end - 8];
-        const char* target = "id-next";
-        bool match = true;
-        for (int k = 0; k < 7; k++) {
-            if (tolower((unsigned char)content[k]) != target[k]) { match = false; break; }
+        // Calculate start position of the potential comment.
+        size_t start = end - kIdLen + 1;
+        
+        // Compare against the global configuration constant (case-insensitive).
+        if (_strnicmp(&src[start], idNextComment, kIdLen) == 0)
+        {
+            return CTX_ID;
         }
-        if (match) return 1;
     }
 
-    // 4. Check for /*CLASS-NEXT*/ (Total length 14: 2 for /*, 10 for CLASS-NEXT, 2 for */).
-    if (end >= 13 && src[end - 13] == '/' && src[end - 12] == '*')
+    // Check for Class Directive.
+    const size_t kClassLen = sizeof(classNextComment) - 1;
+
+    if (end >= kClassLen - 1)
     {
-        const char* content = &src[end - 11];
-        const char* target = "class-next";
-        bool match = true;
-        for (int k = 0; k < 10; k++) {
-            if (tolower((unsigned char)content[k]) != target[k]) { match = false; break; }
+        size_t start = end - kClassLen + 1;
+        
+        if (_strnicmp(&src[start], classNextComment, kClassLen) == 0)
+        {
+            return CTX_CLASS;
         }
-        if (match) return 0;
     }
 
-    return -1;
+    return CTX_NONE;
 }
 
-static int jsSniffContext(const char* buf, size_t len)
+// This function analyzes the JS code preceding a string literal to determine.
+// if that string contains an ID, a Class, or a CSS Selector.
+static JsContextType internalSniffContext(const char* buf, size_t len)
 {
-    if (len < 5) return -1;
+    if (len == 0) return CTX_NONE;
     size_t i = len - 1;
-    while (i > 0 && (parserCommonIsSpace(buf[i]) || buf[i] == '(' || buf[i] == '=' || buf[i] == ',')) i--;
-    
-    if (i >= 13 && !strncmp(&buf[i - 13], "getElementById", 14)) return 1; // ID.
-    if (i >= 19 && !strncmp(&buf[i - 19], "getElementsByTagName", 20)) return -1;
-    if (i >= 21 && !strncmp(&buf[i - 21], "getElementsByClassName", 22)) return 0; // Class.
-    
-    // classList checks
-    if (i >= 3 && !strncmp(&buf[i - 3], ".add", 4)) return 0;
-    if (i >= 6 && !strncmp(&buf[i - 6], ".remove", 7)) return 0;
-    if (i >= 6 && !strncmp(&buf[i - 6], ".toggle", 7)) return 0;
-    if (i >= 8 && !strncmp(&buf[i - 8], ".contains", 9)) return 0;
 
-    return -1;
+    // 1. Skip whitespace before the string
+    i = internalSkipSpaceBack(buf, i);
+
+    // 2. Handle setAttribute("id|class", ...)
+    // Pattern: setAttribute ( ... , 
+    // We are currently at the comma (or whitespace before it).
+    if (buf[i] == ',')
+    {
+        size_t tempI = (i > 0) ? i - 1 : 0;
+        tempI = internalSkipSpaceBack(buf, tempI);
+        
+        // We expect the closing quote of the FIRST argument
+        char quote = buf[tempI];
+        if (quote == '\'' || quote == '"' || quote == '`')
+        {
+            // Scan back strictly for the start quote. 
+            // We assume "id" or "class" are short and don't have escaped quotes for optimization.
+            size_t endQuoteIdx = tempI;
+            bool foundStart = false;
+            size_t limit = (tempI > 20) ? tempI - 20 : 0; // Look back max 20 chars
+
+            while (tempI > limit)
+            {
+                tempI--;
+                if (buf[tempI] == quote) { foundStart = true; break; }
+            }
+
+            if (foundStart)
+            {
+                // Check the content of the first argument
+                size_t keyLen = endQuoteIdx - tempI - 1;
+                const char* key = &buf[tempI + 1];
+                
+                JsContextType potentialCtx = CTX_NONE;
+                if (keyLen == 2 && strncmp(key, "id", 2) == 0) potentialCtx = CTX_ID;
+                else if (keyLen == 5 && strncmp(key, "class", 5) == 0) potentialCtx = CTX_CLASS;
+
+                if (potentialCtx != CTX_NONE)
+                {
+                    // Now verify the function name is setAttribute
+                    tempI = (tempI > 0) ? tempI - 1 : 0;
+                    tempI = internalSkipSpaceBack(buf, tempI);
+                    if (buf[tempI] == '(')
+                    {
+                        tempI = (tempI > 0) ? tempI - 1 : 0;
+                        tempI = internalSkipSpaceBack(buf, tempI);
+                        if (internalMatchWordBack(buf, &tempI, "setAttribute")) return potentialCtx;
+                    }
+                }
+            }
+        }
+        // If we hit comma but didn't match setAttribute logic, fall through to normal logic
+        // (Unlikely to be valid JS syntax for other cases we care about, but safe to continue).
+    }
+
+    // 3. Normal Function/Method call: func( or method(
+    if (buf[i] != '(' && buf[i] != '=') return CTX_NONE; // Must start with ( or = (assignment)
+    
+    if (buf[i] == '=') {
+        // Simple assignment check could go here if needed (e.g. className = "...")
+        // For now, focusing on function calls as requested.
+        return CTX_NONE; 
+    }
+
+    // Move past '('
+    i = (i > 0) ? i - 1 : 0;
+    i = internalSkipSpaceBack(buf, i);
+
+    // --- CHECK FOR SPECIFIC METHODS ---
+
+    // ID Specific
+    if (internalMatchWordBack(buf, &i, "getElementById")) return CTX_ID;
+
+    // Class Specific
+    if (internalMatchWordBack(buf, &i, "getElementsByClassName")) return CTX_CLASS;
+    
+    // Selectors (querySelector, closest, matches, jQuery's $)
+    // We check these before checking the generic ".add" to avoid overlap issues
+    size_t selectorCheckI = i; // Save state
+    if (internalMatchWordBack(buf, &selectorCheckI, "querySelector")) return CTX_SELECTOR;
+    selectorCheckI = i;
+    if (internalMatchWordBack(buf, &selectorCheckI, "querySelectorAll")) return CTX_SELECTOR;
+    selectorCheckI = i;
+    if (internalMatchWordBack(buf, &selectorCheckI, "closest")) return CTX_SELECTOR;
+    selectorCheckI = i;
+    if (internalMatchWordBack(buf, &selectorCheckI, "matches")) return CTX_SELECTOR;
+    selectorCheckI = i;
+    if (internalMatchWordBack(buf, &selectorCheckI, "jQuery")) return CTX_SELECTOR;
+    selectorCheckI = i;
+    if (buf[selectorCheckI] == '$') { 
+        // jQuery alias $, ensure previous char isn't identifier
+        if (selectorCheckI == 0 || !internalIsIdentifierChar(buf[selectorCheckI - 1])) return CTX_SELECTOR; 
+    }
+
+    // jQuery Methods (.addClass, .removeClass, .hasClass)
+    // i points to the last char of the function name
+    size_t jqI = i;
+    if (internalMatchWordBack(buf, &jqI, "addClass") || 
+        internalMatchWordBack(buf, &jqI, "removeClass") ||
+        internalMatchWordBack(buf, &jqI, "hasClass") || 
+        internalMatchWordBack(buf, &jqI, "toggleClass"))
+    {
+        // These are almost exclusively class operations.
+        // We could check for preceding '.' but it's safe to assume these specific names imply classes.
+        return CTX_CLASS;
+    }
+
+    // --- CHECK FOR classList.* ---
+    // Methods: add, remove, toggle, contains
+    size_t clI = i;
+
+    if (internalMatchWordBack(buf, &clI, "add") || 
+        internalMatchWordBack(buf, &clI, "remove") || 
+        internalMatchWordBack(buf, &clI, "toggle") || 
+        internalMatchWordBack(buf, &clI, "contains"))
+    {
+        // Now we must confirm it is applied to 'classList'
+        // clI points to char before "add".
+        clI = internalSkipSpaceBack(buf, clI);
+        
+        if (buf[clI] == '.') 
+        {
+            clI = (clI > 0) ? clI - 1 : 0;
+            clI = internalSkipSpaceBack(buf, clI);
+            
+            if (internalMatchWordBack(buf, &clI, "classList")) {
+                return CTX_CLASS;
+            }
+        }
+    }
+
+    return CTX_NONE;
 }
+
 
 // Returns true if comment was handled and index updated.
-static bool jsConsumeComment(const char* src, size_t len, size_t* i, JsDynBuf* out)
+static bool internalConsumeComment(const char* src, size_t len, size_t* i, JsDynBuf* out)
 {
     if (src[*i] != '/' || *i + 1 >= len) return false;
 
@@ -140,25 +316,25 @@ static bool jsConsumeComment(const char* src, size_t len, size_t* i, JsDynBuf* o
         *i += 2;
         while (*i + 1 < len && !(src[*i] == '*' && src[*i + 1] == '/')) (*i)++;
         *i += 2;
-        jsDbAppendChar(out, ' '); // Safety space. TODO: See if the space is necessary.
+        internalDbAppendChar(out, ' '); // Safety space. TODO: See if the space is necessary.
         return true; 
     }
     return false;
 }
 
 // Returns true if string was handled and index updated.
-static bool jsConsumeString(const char* src, size_t len, size_t* i, JsDynBuf* out, bool mangle, SetOfClassesAndIDs* set)
+static bool internalConsumeString(const char* src, size_t len, size_t* i, JsDynBuf* out, bool mangle, SetOfClassesAndIDs* set)
 {
-    size_t startQuoteIdx = *i; // Store start index for backtracking.
-    char c = src[*i];
-    if (c != '\'' && c != '\"' && c != '`') return false;
+    size_t startQuoteIdx = *i;
+    char quote = src[*i];
+    
+    if (quote != '\'' && quote != '\"' && quote != '`') return false;
 
-    char quote = c;
-    (*i)++; // Skip quote.
+    (*i)++; // Skip open quote
 
-    // 1. Capture content.
+    // 1. Capture content
     JsDynBuf strContent;
-    jsDbInit(&strContent);
+    internalDbInit(&strContent);
     bool escaped = false;
     
     while (*i < len)
@@ -166,77 +342,117 @@ static bool jsConsumeString(const char* src, size_t len, size_t* i, JsDynBuf* ou
         if (src[*i] == '\\' && !escaped)
         {
             escaped = true;
-            jsDbAppendChar(&strContent, src[*i]);
+            internalDbAppendChar(&strContent, src[*i]); // Keep escape in raw content
             (*i)++;
             continue;
         }
         if (src[*i] == quote && !escaped) break;
-        jsDbAppendChar(&strContent, src[*i]);
+        internalDbAppendChar(&strContent, src[*i]);
         escaped = false;
         (*i)++;
     }
 
-    // 2. Analyze & Mangle.
+    // 2. Analyze & Mangle
     char* rawStr = strContent.data;
     size_t rawLen = strContent.len;
-    bool isSelector = false;
-    bool isId = false;
-    char* cleanName = rawStr;
+    
+    // Determine context
+    JsContextType ctx = CTX_NONE;
 
-    // Check prefix.
-    if (rawLen > 1)
+    if (set)
     {
-        if (rawStr[0] == '.') { isSelector = true; isId = false; cleanName++; }
-        else if (rawStr[0] == '#') { isSelector = true; isId = true; cleanName++; }
-    }
-    // Check context.
-    if (!isSelector && set)
-    {
-        // Priority 1: Check directive backwards from the opening quote.
-        int ctx = jsSniffDirective(src, startQuoteIdx);
+        // Priority 1: Directives (/*ID-NEXT*/)
+        ctx = internalSniffDirective(src, startQuoteIdx);
         
-        // Priority 2: If no directive, check JS syntax context (getElementById, etc).
-        if (ctx == -1) {
-            ctx = jsSniffContext(out->data, out->len);
+        // Priority 2: Syntax Context (classList.add, querySelector, etc)
+        if (ctx == CTX_NONE) {
+            ctx = internalSniffContext(out->data, out->len);
+        }
+    }
+
+    // Apply Mangle Logic
+    bool performMangle = false;
+    bool isId = false;
+    char* tokenToMangle = rawStr;
+
+    // CASE A: Explicit ID or Class context (from directive or specific function like getElementById)
+    if (ctx == CTX_ID || ctx == CTX_CLASS)
+    {
+        performMangle = true;
+        isId = (ctx == CTX_ID);
+        
+        // Strip '.' or '#' if user accidentally provided it in a context that doesn't need it
+        // (e.g. getElementById("#foo") - technically wrong JS but we can handle it, 
+        // or classList.add(".foo")).
+        if (rawLen > 1 && (rawStr[0] == '#' || rawStr[0] == '.')) {
+            tokenToMangle++;
+        }
+    }
+    // CASE B: Selector context (querySelector, $, etc.)
+    else if (ctx == CTX_SELECTOR && rawLen > 1)
+    {
+        // Only mangle if it explicitly looks like a class or ID selector
+        if (rawStr[0] == '.') {
+            performMangle = true;
+            isId = false;
+            tokenToMangle++; // Skip '.'
+        }
+        else if (rawStr[0] == '#') {
+            performMangle = true;
+            isId = true;
+            tokenToMangle++; // Skip '#'
+        }
+    }
+    // CASE C: No context, but string starts with . or #
+    // (Existing behavior: blind mangling if it looks like a selector? 
+    //  Refined: Only if we are fairly sure. The prompt implies specific context support.
+    //  However, keeping original behavior for standalone strings is risky. 
+    //  Let's stick to Context-based mangling for safety, plus Directive.)
+    
+    // 3. Write Output
+    internalDbAppendChar(out, quote);
+
+    if (mangle && performMangle && set)
+    {
+        // Check validity of identifier
+        bool valid = (strlen(tokenToMangle) > 0);
+        for(size_t k=0; tokenToMangle[k]; k++) {
+            if(!internalIsIdentifierChar(tokenToMangle[k])) { valid = false; break; }
         }
 
-        if (ctx != -1)
+        if (valid)
         {
-            bool valid = (rawLen > 0);
-            for(size_t k=0; k<rawLen; k++) if(!jsIsIdentifierChar(rawStr[k])) valid = false;
-            if (valid)
-            {
-                isSelector = true;
-                isId = (ctx == 1);
+            size_t idx = cssRecordSelector(set, tokenToMangle, isId, false);
+            if (idx != (size_t)-1) {
+                char mangled[16];
+                parserCommonGetMangled((int)idx, mangled);
+                
+                // Re-add prefix if it was a selector context or we stripped it
+                if (tokenToMangle > rawStr) internalDbAppendChar(out, rawStr[0]); 
+                
+                internalDbAppend(out, mangled, strlen(mangled));
+            } else {
+                internalDbAppend(out, rawStr, rawLen);
             }
         }
-    }
-
-    // 3. Write Output.
-    jsDbAppendChar(out, quote);
-    if (mangle && isSelector && set)
-    {
-        size_t idx = cssRecordSelector(set, cleanName, isId, false);
-        if (idx != (size_t)-1) {
-            char mangled[16];
-            parserCommonGetMangled((int)idx, mangled);
-            if (cleanName > rawStr) jsDbAppendChar(out, rawStr[0]); // Prefix
-            jsDbAppend(out, mangled, strlen(mangled));
-        } else {
-            jsDbAppend(out, rawStr, rawLen);
+        else
+        {
+            // Invalid chars for a selector, leave alone
+            internalDbAppend(out, rawStr, rawLen);
         }
     }
     else
     {
-        jsDbAppend(out, rawStr, rawLen);
+        internalDbAppend(out, rawStr, rawLen);
     }
-    jsDbAppendChar(out, quote);
+    internalDbAppendChar(out, quote);
 
     if (strContent.data) free(strContent.data);
-    if (*i < len) (*i)++; // Skip closing quote in source.
+    if (*i < len) (*i)++; // Skip closing quote in source
     return true;
 }
-static void jsConsumeWhitespace(const char* src, size_t len, size_t* i, JsDynBuf* out)
+
+static void internalConsumeWhitespace(const char* src, size_t len, size_t* i, JsDynBuf* out)
 {
     // Safety check: do we need a space?
     if (out->len > 0 && !parserCommonIsSpace(out->data[out->len - 1]))
@@ -249,7 +465,7 @@ static void jsConsumeWhitespace(const char* src, size_t len, size_t* i, JsDynBuf
             if (j < len)
             {
                 char next = src[j];
-                if (isalnum((unsigned char)next) || next == '_' || next == '$') jsDbAppendChar(out, ' ');
+                if (isalnum((unsigned char)next) || next == '_' || next == '$') internalDbAppendChar(out, ' ');
             }
         }
     }
@@ -259,21 +475,21 @@ static void jsConsumeWhitespace(const char* src, size_t len, size_t* i, JsDynBuf
     (*i)++;
 }
 
-static void jsMinifyStream(const char* src, size_t len, JsDynBuf* out, bool mangle, SetOfClassesAndIDs* set)
+static void internalMinifyStream(const char* src, size_t len, JsDynBuf* out, bool mangle, SetOfClassesAndIDs* set)
 {
     size_t i = 0;
     while (i < len)
     {
-        if (jsConsumeComment(src, len, &i, out)) continue;
-        if (jsConsumeString(src, len, &i, out, mangle, set)) continue;
+        if (internalConsumeComment(src, len, &i, out)) continue;
+        if (internalConsumeString(src, len, &i, out, mangle, set)) continue;
         
         if (parserCommonIsSpace(src[i]))
         {
-            jsConsumeWhitespace(src, len, &i, out);
+            internalConsumeWhitespace(src, len, &i, out);
             continue;
         }
 
-        jsDbAppendChar(out, src[i]);
+        internalDbAppendChar(out, src[i]);
         i++;
     }
 }
@@ -292,10 +508,10 @@ DWORD WINAPI jsSpawnThread(LPVOID lpParam)
 
     // 1. Prepare Output Buffer.
     JsDynBuf out;
-    jsDbInit(&out);
+    internalDbInit(&out);
 
     // 2. Perform Parsing.
-    jsMinifyStream(src, args->len, &out, args->mangle, args->pCritSet);
+    internalMinifyStream(src, args->len, &out, args->mangle, args->pCritSet);
 
     // 3. Finalize.
     free(src); // Free original source.
