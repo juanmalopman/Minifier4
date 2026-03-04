@@ -55,6 +55,35 @@ Minifier4 provides two ways to optimize your files:
 
 ---
 
+## 🛠 Building from Source
+
+If you prefer to compile Minifier4 yourself, the project provides a highly flexible, unified build script (`build.bat`) that supports multiple compilers. Alternatively, you can simply open the project root in **Visual Studio** and build directly from the IDE.
+
+**Using the Command-Line Build Script:**
+
+The included `build.bat` script accepts several arguments to customize your build target, compiler, and post-build actions:
+
+*   **Compilers:** `--gcc`, `--clang`, `--msvc`
+*   **Build Types:** `--debug`, `--release`
+*   **Actions:** `--test` (Run tests), `--clean` (Rebuild), `--clean-only` (Clean output directories), `--headers` (Generate headers)
+
+**Examples:**
+
+```cmd
+:: Build a Release version using MSVC
+build.bat --msvc --release
+
+:: Build a Debug version using GCC and automatically run tests
+build.bat --gcc --debug --test
+
+:: Clean previous builds and rebuild using Clang
+build.bat --clang --debug --clean
+```
+
+*(Note: Ensure your chosen compiler is added to your Windows PATH before running the script).*
+
+---
+
 ### 📖 Command Line Reference
 
 Usage: `Minifier4.exe [options]`
@@ -94,3 +123,24 @@ PROCESSING BEHAVIOR:
   --no-random-mangle, -nrm     Disable randomized mangling strings.
   --fallback, -f               Enable fallback to last success on error.
   --no-fallback, -nf           Disable fallback on error.
+```
+
+---
+
+## 🗺 Roadmap
+
+Curious about what's planned next? Check out the [ROADMAP.md](ROADMAP.md) file to see upcoming features, planned optimizations, and architectural improvements.
+
+---
+
+## 🐛 Bug Reports & Contributing
+
+I am highly open to feedback and bug reports! If you encounter any crashes, parse errors, or unexpected behavior, please [open an issue](https://github.com/juanmalopman/Minifier4/issues) with details and steps to reproduce the problem. 
+
+**Note on Code Contributions:** At this time, I am **not accepting external code contributions or pull requests**. The project is strictly maintained as a personal, closed-contribution endeavor. 
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
